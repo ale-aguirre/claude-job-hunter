@@ -562,6 +562,9 @@ document.addEventListener('DOMContentLoaded', () => {
   applyI18n();
   connectSSE();
   connectActivityStream();
+  // Show the default view immediately — kanbanView starts hidden in HTML
+  const firstTab = document.querySelector('.tab');
+  if (firstTab) switchTab('kanban', firstTab);
   loadAll();
   setInterval(loadAll, 30000);
 });
