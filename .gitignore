@@ -32,3 +32,5 @@ dashboard/.next/
 # Playwright screenshots
 output/
 screenshots/
+dashboard/node_modules
+workers/package-lock.json

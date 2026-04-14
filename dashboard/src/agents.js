@@ -3,13 +3,13 @@
 // Agent roster — anime characters with per-agent color theming
 // role: what this system-name actually does (shown in chip tooltip)
 const _FERN   = { name: 'Fern',    shortRole: 'Researcher',   emoji: '🔍', color: '#8b5cf6', avatar: '/avatars/fern.png',      anime: 'Frieren',     role: 'Researcher · busca plataformas y oportunidades' };
-const _SENKU  = { name: 'Senku',   shortRole: 'Orchestrator', emoji: '🧪', color: '#f97316', avatar: '/avatars/senku_v6.png',   anime: 'Dr. Stone',   role: 'Orchestrator · analiza resultados y genera planes' };
+const _SENKU  = { name: 'Senku',   shortRole: 'Orchestrator', emoji: '🧪', color: '#f97316', avatar: '/avatars/senku.png',      anime: 'Dr. Stone',   role: 'Orchestrator · analiza resultados y genera planes' };
 const _KAGUYA = { name: 'Kaguya',  shortRole: 'Social Scout', emoji: '📝', color: '#ec4899', avatar: '/avatars/kaguya.png',    anime: 'Kaguya-sama', role: 'Social Scout · busca posts de hiring en X y Reddit' };
 const _RIN    = { name: 'Rin',     shortRole: 'Recruiter',    emoji: '⚽', color: '#a78bfa', avatar: '/avatars/rin.png',       anime: 'Blue Lock',   role: 'Recruiter · analiza bookmarks de Siftly' };
 const _ERWIN  = { name: 'Erwin',   shortRole: 'Analyst',      emoji: '👁️', color: '#06b6d4', avatar: '/avatars/erwin.png',     anime: 'AoT',         role: 'Analyst · análisis profundo de tendencias de Siftly' };
 const _REIGEN = { name: 'Reigen',  shortRole: 'Sales',        emoji: '🎭', color: '#f59e0b', avatar: '/avatars/reigen.png',    anime: 'Mob Psycho',  role: 'Sales · cold emails a contactos VERIFICADOS' };
-const _MOB    = { name: 'Mob',     shortRole: 'Registration', emoji: '👻', color: '#7c3aed', avatar: '/avatars/mob_v2.png',       anime: 'Mob Psycho',  role: 'Registration · se registra en plataformas y valida emails' };
-const _NANAMI = { name: 'Nanami',  shortRole: 'QA',           emoji: '🗡️', color: '#d4d4d8', avatar: '/avatars/nanami.png',    anime: 'JJK',         role: 'QA · audita postulaciones y pipeline' };
+const _MOB    = { name: 'Mob',     shortRole: 'Registration', emoji: '👻', color: '#7c3aed', avatar: null,                     anime: 'Mob Psycho',  role: 'Registration · se registra en plataformas y valida emails' };
+const _NANAMI = { name: 'Nanami',  shortRole: 'QA',           emoji: '🗡️', color: '#d4d4d8', avatar: '/avatars/nanami.svg',    anime: 'JJK',         role: 'QA · audita postulaciones y pipeline' };
 
 const AGENTS = {
   // Keys reales usados en agent_log (scripts → nombre de agente)

@@ -1,0 +1,12 @@
+{
+  "name": "job-hunter-dashboard",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3",
+    "dotenv": "^16.4.5"
+  }
+}
