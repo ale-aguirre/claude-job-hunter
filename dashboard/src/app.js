@@ -61,7 +61,7 @@ async function loadAll() {
     const banner = document.getElementById('onboardingBanner');
     const needsSetup = !config.firstName || config.firstName === 'Your' || config.firstName === '';
     if (banner) banner.style.display = 'none'; // wizard replaces banner
-    if (needsSetup && !sessionStorage.getItem('wizardDismissed')) {
+    if (needsSetup && !localStorage.getItem('wizardDismissed')) {
       showWizard();
     }
   } catch(e) { console.warn('Load failed:', e.message); }
@@ -385,7 +385,7 @@ function showWizard() {
 function hideWizard() {
   const overlay = document.getElementById('wizardOverlay');
   if (overlay) overlay.style.display = 'none';
-  sessionStorage.setItem('wizardDismissed', '1');
+  localStorage.setItem('wizardDismissed', '1');
 }
 
 function _renderWizStep() {
