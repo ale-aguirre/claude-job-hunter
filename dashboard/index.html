@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HuntDesk</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;600;700&family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="src/app.css">
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div>
+      <span class="logo">⚡ Hunt Desk</span>
+      <span class="logo-sub">Job Hunter System · Remote</span>
+    </div>
+    <div class="live-dot" id="liveDot"></div>
+    <span class="header-sub" id="headerSub">⚡ Loading...</span>
+  </div>
+  <div class="header-right">
+    <button onclick="exportData()" title="Export JSON backup — descarga todos tus datos" style="background:transparent;border:1px solid rgba(124,58,237,.4);color:var(--muted);border-radius:8px;padding:.35rem .6rem;font-size:.85rem;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='rgba(124,58,237,.4)';this.style.color='var(--muted)'">⬇ Export</button>
+    <button onclick="document.getElementById('importFile').click()" title="Import JSON backup — restaura datos desde backup" style="background:transparent;border:1px solid rgba(124,58,237,.4);color:var(--muted);border-radius:8px;padding:.35rem .6rem;font-size:.85rem;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='rgba(124,58,237,.4)';this.style.color='var(--muted)'">⬆ Import</button>
+    <input type="file" id="importFile" accept=".json" style="display:none" onchange="importData(this)">
+    <button onclick="openSettings()" title="Configura tu perfil, CV, keywords y tipo de trabajo" style="background:transparent;border:1px solid rgba(124,58,237,.4);color:var(--muted);border-radius:8px;padding:.35rem .6rem;font-size:.85rem;cursor:pointer;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='rgba(124,58,237,.4)';this.style.color='var(--muted)'">⚙</button>
+    <button id="langToggle" onclick="switchLanguage()" style="background:transparent;border:1px solid rgba(124,58,237,.4);color:var(--muted);border-radius:8px;padding:.35rem .7rem;font-size:.7rem;font-weight:700;cursor:pointer;letter-spacing:.5px;font-family:'Rajdhani',sans-serif;transition:all .2s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--text)'" onmouseout="this.style.borderColor='rgba(124,58,237,.4)';this.style.color='var(--muted)'">🌐 EN</button>
+    <button class="btn btn-hunt" id="huntBtn" onclick="triggerHunt()" title="Busca nuevos trabajos en 8+ plataformas (tarda ~60s)" data-i18n="hunt.start">⚡ Hunt</button>
+    <button class="btn btn-accent" onclick="openModal('addOverlay')" title="Agregar trabajo manualmente al tracker" data-i18n="nav.add">+ Agregar</button>
+    <button class="btn btn-accent" onclick="openModal('incomeOverlay')" style="background:var(--green);color:#000" data-i18n="nav.income">$ Ingreso</button>
+  </div>
+</div>
+
+<!-- Onboarding Banner (hidden until JS shows it) -->
+<div id="onboardingBanner" style="display:none;background:rgba(124,58,237,.15);border-bottom:1px solid rgba(124,58,237,.3);padding:.5rem 1.2rem;font-size:.85rem;color:var(--muted);text-align:center">
+  ⚙ HuntDesk no está configurado — <a href="#" onclick="openSettings();return false" style="color:var(--purple)">Configurar perfil</a> para empezar a cazar trabajos
+</div>
+
+<!-- Body -->
+<div class="body-wrap">
+
+  <!-- Main area -->
+  <div class="main-area">
+
+    <!-- ── Stats Bar ── -->
+    <div class="stats-bar" id="sectionStats">
+      <div class="stat c-purple">
+        <div class="stat-num" id="sFound" style="color:var(--purple)">—</div>
+        <div class="stat-lbl" data-i18n="stats.found">Encontrados</div>
+      </div>
+      <div class="stat c-blue">
+        <div class="stat-num" id="sApplied" style="color:var(--blue)">—</div>
+        <div class="stat-lbl" data-i18n="stats.applied">Postulados</div>
+      </div>
+      <div class="stat c-amber">
+        <div class="stat-num" id="sInterview" style="color:var(--amber)">—</div>
+        <div class="stat-lbl" data-i18n="stats.interview">Entrevistas</div>
+      </div>
+      <div class="stat c-green">
+        <div class="stat-num" id="sOffer" style="color:var(--green)">—</div>
+        <div class="stat-lbl" data-i18n="stats.offers">Ofertas</div>
+      </div>
+      <div class="stat c-red">
+        <div class="stat-num" id="sRejected" style="color:var(--red)">—</div>
+        <div class="stat-lbl" data-i18n="stats.rejected">Rechazados</div>
+      </div>
+      <div class="stat" style="border-color:var(--orange)20">
+        <div class="stat-num" id="sBlocked" style="color:var(--orange)">—</div>
+        <div class="stat-lbl" data-i18n="stats.blocked">Bloqueados</div>
+      </div>
+      <div class="stat" style="background:transparent;border-color:transparent;text-align:left;min-width:180px">
+        <div class="stat-lbl" data-i18n="stats.responseRate">Tasa de respuesta</div>
+        <div class="stat-num" id="sRate" style="font-size:1.2rem;color:var(--amber)">—</div>
+      </div>
+    </div>
+
+    <!-- ── Income Goal Bar ── -->
+    <div class="income-strip" id="sectionGoal">
+      <div class="income-row1">
+        <span class="income-goal-label" data-i18n="goal.label">Meta mensual</span>
+        <span class="income-goal-title" id="incomeAmt">$0</span>
+        <span class="income-goal-slash">/</span>
+        <span class="income-goal-target">$2,500</span>
+        <span class="income-pct-badge" id="incomePct">0%</span>
+        <div class="income-streams-row" id="incomeStreams">
+          <span class="s-pill target" onclick="openModal('incomeOverlay')" style="cursor:pointer">+ stream</span>
+        </div>
+      </div>
+      <div class="income-row2">
+        <div class="progress-wrap">
+          <div class="progress-fill" id="incomeFill" style="width:0%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── View Tabs ── -->
+    <div class="tabs-bar" id="sectionTabs">
+      <div class="tab on" onclick="switchTab('chat',this)">💬 Chat</div>
+      <div class="tab" onclick="switchTab('kanban',this)"><span data-i18n="tabs.kanban">Kanban</span> <span class="tab-badge" id="tbTotal">0</span></div>
+      <div class="tab" onclick="switchTab('list',this)"><span data-i18n="tabs.list">Lista</span></div>
+      <div class="tab" onclick="switchTab('priority',this)">⚡ <span data-i18n="tabs.priority">Prioridad</span></div>
+      <div class="tab" onclick="switchTab('directory',this)">🌍 <span data-i18n="tabs.directory">Directorio</span></div>
+      <div class="tab" onclick="tabLocked()" style="opacity:0.42;cursor:not-allowed" title="Próximamente — en desarrollo">💰 Monetizar <span style="font-size:.6rem">🔒</span></div>
+      <div class="tab" onclick="tabLocked()" style="opacity:0.42;cursor:not-allowed" title="Próximamente — en desarrollo">🔬 Investigación <span style="font-size:.6rem">🔒</span></div>
+      <div class="tab" onclick="switchTab('orgchart',this)">🏗 Equipo</div>
+    </div>
+
+    <!-- Kanban view -->
+    <div class="kanban-wrap" id="kanbanView" style="display:none">
+      <!-- columns rendered by JS -->
+    </div>
+
+    <!-- List view -->
+    <div id="listView">
+      <div class="l-head">
+        <span data-i18n="list.role">Rol / Empresa</span>
+        <span data-i18n="list.salary">Salario</span>
+        <span data-i18n="list.source">Fuente</span>
+        <span data-i18n="list.status">Estado</span>
+        <span data-i18n="list.date">Fecha</span>
+      </div>
+      <div id="listBody" style="overflow-y:auto;flex:1"></div>
+    </div>
+
+    <!-- Priority view -->
+    <div id="priorityView">
+      <!-- rendered by JS -->
+    </div>
+
+    <!-- Directory view -->
+    <div id="directoryView" style="display:none;overflow-y:auto;flex:1;padding:1.25rem 1.5rem"></div>
+
+    <!-- Monetize view -->
+    <div id="monetizeView" style="display:none;overflow-y:auto;flex:1;padding:1.25rem 1.5rem"></div>
+
+    <!-- Research view -->
+    <div id="researchView" style="display:none;overflow-y:auto;flex:1;padding:1.25rem 1.5rem"></div>
+
+    <!-- Chat view -->
+    <div id="chatView" style="display:flex;flex:1;min-height:0;overflow:hidden"></div>
+
+    <!-- Orgchart view -->
+    <div id="orgchartView" style="display:none;overflow-y:auto;flex:1;padding:1.5rem"></div>
+
+  </div><!-- /main-area -->
+
+  <!-- Sidebar — Live Agent Activity -->
+  <div class="sidebar" style="display:flex;flex-direction:column;min-height:0">
+
+    <!-- Header -->
+    <div style="flex-shrink:0;padding:.65rem .9rem;background:rgba(124,58,237,.06);border-bottom:1px solid rgba(124,58,237,.22);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-size:.65rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--purple);font-family:'Rajdhani',sans-serif" data-i18n="sidebar.liveActivity">⚡ Actividad en Vivo</div>
+        <div style="font-size:.58rem;color:var(--muted);letter-spacing:2px;opacity:.55;margin-top:1px;font-family:'Rajdhani',sans-serif" data-i18n="sidebar.agentFeed">Canal de comunicación</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:.5rem">
+        <span style="font-size:.55rem;color:var(--muted);letter-spacing:.5px" id="agentCountLabel">—</span>
+        <span id="activityPulse" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#6b7280;transition:background .3s;box-shadow:0 0 6px currentColor"></span>
+      </div>
+    </div>
+
+    <!-- Agent roster chips -->
+    <div class="agent-roster" id="agentRoster">
+      <div class="agent-roster-title" data-i18n="sidebar.deployed">Agentes desplegados</div>
+      <div class="agent-chips" id="agentChips">
+        <!-- rendered by JS -->
+      </div>
+    </div>
+
+    <!-- Chat-style feed -->
+    <div class="log-wrap" id="logWrap">
+      <div style="display:flex;gap:.6rem;align-items:flex-start;padding:.6rem .4rem;opacity:.3">
+        <div class="log-avatar-emoji" style="background:#1e293b;border-color:#334155;border-radius:8px">🤖</div>
+        <div class="log-body">
+          <div class="log-header">
+            <span class="log-ag" style="color:#64748b">Sistema</span>
+            <span class="log-ts">ahora</span>
+          </div>
+          <div class="log-det">Inicializando protocolo de agentes...</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /sidebar -->
+
+</div><!-- /body-wrap -->
+
+<!-- ── Modals ── -->
+
+<!-- Add modal -->
+<div class="overlay" id="addOverlay">
+  <div class="modal">
+    <h2 data-i18n="modal.addTitle">Agregar Oportunidad</h2>
+    <div class="modal-grid">
+      <div class="fld"><label data-i18n="modal.company">Empresa *</label><input id="mC" placeholder="Acme" /></div>
+      <div class="fld"><label data-i18n="modal.role">Rol *</label><input id="mT" placeholder="Frontend Engineer" /></div>
+      <div class="fld"><label data-i18n="modal.salary">Salario / Pago</label><input id="mS" placeholder="$80k or $50/hr" /></div>
+      <div class="fld">
+        <label data-i18n="modal.status">Estado</label>
+        <select id="mSt">
+          <option value="found" data-i18n="statusOpts.found">Encontrado</option>
+          <option value="applied" data-i18n="statusOpts.applied">Postulado</option>
+          <option value="interview" data-i18n="statusOpts.interview">Entrevista</option>
+          <option value="offer" data-i18n="statusOpts.offer">Oferta</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label data-i18n="modal.source">Fuente</label>
+        <select id="mSrc">
+          <option>RemoteOK</option><option>Arc.dev</option><option>Mercor</option>
+          <option>Mindrift</option><option>Lemon.io</option><option>LinkedIn</option>
+          <option>HN</option><option>Wellfound</option><option>Braintrust</option>
+          <option>Turing</option><option>Twitter</option><option>manual</option>
+        </select>
+      </div>
+      <div class="fld"><label data-i18n="modal.location">Ubicación</label><input id="mL" value="Remote" /></div>
+    </div>
+    <div class="fld" style="margin-top:.6rem"><label data-i18n="modal.url">URL</label><input id="mU" placeholder="https://..." /></div>
+    <div class="fld" style="margin-top:.6rem">
+      <label data-i18n="modal.easyApply">Easy Apply?</label>
+      <select id="mE"><option value="0">No</option><option value="1">Yes ⚡</option></select>
+    </div>
+    <div class="fld" style="margin-top:.6rem"><label data-i18n="modal.notes">Notas</label><textarea id="mN" rows="2" placeholder="Key requirements, contact..."></textarea></div>
+    <div class="fld" style="margin-top:.4rem"><label data-i18n="modal.coverLetter">Carta de presentación</label><textarea id="mCL" rows="3" placeholder="Custom pitch..."></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('addOverlay')" data-i18n="modal.cancel">Cancelar</button>
+      <button class="btn btn-accent" onclick="submitAdd()" data-i18n="modal.add">Agregar →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Income modal -->
+<div class="overlay" id="incomeOverlay">
+  <div class="modal">
+    <h2 data-i18n="incomeModal.title">Agregar Fuente de Ingreso</h2>
+    <div class="modal-grid">
+      <div class="fld" style="grid-column:1/-1"><label data-i18n="incomeModal.name">Nombre</label><input id="iN" placeholder="Freelance React dev at Acme" /></div>
+      <div class="fld">
+        <label data-i18n="incomeModal.type">Tipo</label>
+        <select id="iT">
+          <option>job</option><option>freelance</option><option>ai-training</option>
+          <option>saas</option><option>content</option><option>consulting</option>
+        </select>
+      </div>
+      <div class="fld">
+        <label data-i18n="incomeModal.status">Estado</label>
+        <select id="iSt">
+          <option value="active" data-i18n="incomeModal.active">Activo ✅</option>
+          <option value="pending" data-i18n="incomeModal.pending">Pendiente ⏳</option>
+          <option value="target" data-i18n="incomeModal.target">Objetivo 🎯</option>
+        </select>
+      </div>
+      <div class="fld"><label data-i18n="incomeModal.monthlyUsd">USD mensual</label><input id="iA" type="number" placeholder="1500" /></div>
+      <div class="fld"><label data-i18n="incomeModal.notes">Notas</label><input id="iNotes" placeholder="Platform, details..." /></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal('incomeOverlay')" data-i18n="modal.cancel">Cancelar</button>
+      <button class="btn btn-full" style="width:auto;padding:.45rem 1.2rem" onclick="submitIncome()" data-i18n="incomeModal.addStream">Agregar stream</button>
+    </div>
+  </div>
+</div>
+
+<!-- Card detail modal — large -->
+<div class="overlay" id="detailOverlay">
+  <div class="cdm">
+    <button class="cdm-close" onclick="closeModal('detailOverlay')">✕</button>
+    <div class="cdm-header">
+      <div class="cdm-badges" id="cdmBadges"></div>
+      <div class="cdm-title" id="cdmTitle"></div>
+      <div class="cdm-company" id="cdmCompany"></div>
+    </div>
+    <div class="cdm-meta" id="cdmMeta"></div>
+    <div class="cdm-blocked" id="cdmBlocked" style="display:none"></div>
+    <div class="cdm-section" id="cdmNotesSection" style="display:none">
+      <div class="cdm-label" data-i18n="detail.notes">Notas</div>
+      <div class="cdm-text" id="cdmNotes"></div>
+    </div>
+    <div class="cdm-section" id="cdmCoverSection" style="display:none">
+      <div class="cdm-label" data-i18n="detail.coverLetter">Carta de presentación</div>
+      <pre class="cdm-cover" id="cdmCover"></pre>
+    </div>
+    <div class="cdm-footer">
+      <div class="cdm-status-btns" id="cdmActions"></div>
+      <div style="display:flex;gap:.5rem">
+        <button class="btn btn-accent" id="cdmOpenBtn" data-i18n="modal.open">↗ Abrir</button>
+        <button class="btn btn-ghost" onclick="closeModal('detailOverlay')" data-i18n="modal.close">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Agent Profile Modal -->
+<div class="overlay" id="agentProfileOverlay">
+  <div class="apm">
+    <button class="cdm-close" onclick="closeModal('agentProfileOverlay')">✕</button>
+    <div class="apm-header">
+      <div id="apmAvatar"></div>
+      <div class="apm-title-block">
+        <div class="apm-name" id="apmName"></div>
+        <div class="apm-role" id="apmRole"></div>
+        <div class="apm-anime" id="apmAnime"></div>
+        <div class="apm-meta-row" id="apmMeta"></div>
+      </div>
+    </div>
+    <div class="apm-soul" id="apmSoul"></div>
+    <div class="apm-grid">
+      <div>
+        <div class="cdm-label" style="margin-bottom:.5rem" data-i18n="agentModal.skills">Habilidades</div>
+        <div class="apm-skills" id="apmSkills"></div>
+      </div>
+      <div>
+        <div class="cdm-label" style="margin-bottom:.5rem" data-i18n="agentModal.scripts">Scripts</div>
+        <div class="apm-scripts" id="apmScripts"></div>
+      </div>
+    </div>
+    <div>
+      <div class="cdm-label" style="margin-bottom:.35rem" data-i18n="agentModal.recentActivity">Actividad reciente</div>
+      <div class="apm-activity" id="apmActivity"><span style="color:var(--muted);font-size:.78rem">Cargando...</span></div>
+    </div>
+    <div class="apm-stats" id="apmStats"></div>
+  </div>
+</div>
+
+<!-- Log Detail Modal -->
+<div class="log-detail-modal hidden" id="logDetailModal" onclick="if(event.target===this)closeLogDetail()">
+  <div class="log-detail-box">
+    <div class="ldb-header">
+      <div id="ldbAvatar"></div>
+      <div class="ldb-meta">
+        <div class="ldb-name" id="ldbName">—</div>
+        <div class="ldb-anime" id="ldbAnime"></div>
+        <div class="ldb-role" id="ldbRole"></div>
+        <span class="ldb-action" id="ldbAction"></span>
+        <span class="ldb-ts" id="ldbTs"></span>
+      </div>
+    </div>
+    <div class="ldb-message" id="ldbMessage"></div>
+    <div id="ldbRawLabel" style="font-size:.62rem;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:.35rem" data-i18n="logDetail.rawOutput">Salida completa</div>
+    <div class="ldb-detail-raw" id="ldbDetailRaw"></div>
+    <button class="ldb-close" id="ldbCloseBtn" onclick="closeLogDetail()" data-i18n="logDetail.close">✕ Cerrar</button>
+  </div>
+</div>
+
+<!-- Settings modal -->
+<div class="overlay" id="settingsOverlay">
+  <div class="modal" style="max-width:600px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;margin-bottom:0">
+      <h2 style="margin:0">⚙ Settings</h2>
+      <button onclick="closeModal('settingsOverlay')" style="background:none;border:none;color:var(--muted);font-size:1.2rem;cursor:pointer;padding:.25rem">✕</button>
+    </div>
+    <div id="settingsContent" style="overflow-y:auto;flex:1;padding-top:.5rem"></div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div class="toasts" id="toasts"></div>
+
+<!-- Welcome Wizard — shown on first launch if profile not configured -->
+<div id="wizardOverlay" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.93);backdrop-filter:blur(10px);align-items:center;justify-content:center;padding:1rem">
+  <div style="background:var(--bg2);border:1px solid rgba(124,58,237,.35);border-radius:18px;width:min(580px,100%);max-height:90vh;overflow-y:auto;padding:2rem 2.5rem">
+    <div id="wizardContent"></div>
+  </div>
+</div>
+
+<!-- Scripts — order matters: i18next CDN first, then i18n setup, then feature modules, then app -->
+<script src="https://cdn.jsdelivr.net/npm/i18next@23/i18next.min.js"></script>
+<script src="src/i18n.js"></script>
+<script src="src/agents.js"></script>
+<script src="src/kanban.js"></script>
+<script src="src/views.js"></script>
+<script src="src/chat.js"></script>
+<script src="src/app.js"></script>
+<script>
+// Load config and populate header on startup
+fetch('/api/config').then(r => r.json()).then(cfg => {
+  window._cfg = cfg;
+  const sub = document.getElementById('headerSub');
+  if (sub) sub.textContent = `${cfg.name} · ${cfg.location} · 🎯 ${cfg.goal}`;
+  // Update income goal bar target display
+  const target = document.querySelector('.income-goal-target');
+  if (target && cfg.goal) target.textContent = cfg.goal;
+}).catch(() => {
+  const sub = document.getElementById('headerSub');
+  if (sub) sub.textContent = 'HuntDesk · Remote';
+});
+</script>
+
+</body>
+</html>

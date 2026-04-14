@@ -1,0 +1,34 @@
+# Personal data — never commit
+profile.json
+jobs.db
+applications.db
+
+# Environment
+.env
+.env.local
+workers/.env
+
+# Cache
+.profile-keywords.json
+workers/.profile-keywords.json
+
+# Node
+node_modules/
+workers/node_modules/
+
+# Logs
+*.log
+chrome-mirror.log
+server.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dashboard build
+dashboard/dist/
+dashboard/.next/
+
+# Playwright screenshots
+output/
+screenshots/

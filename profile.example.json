@@ -1,0 +1,41 @@
+{
+  "name": "Tu Nombre",
+  "profession": "AI Agent Developer",
+  "skills": ["Claude API", "TypeScript", "Node.js", "React", "MCP Servers"],
+  "experience_years": 5,
+  "salary_target": {
+    "amount": 3000,
+    "currency": "USD",
+    "period": "monthly",
+    "minimum": 2000
+  },
+  "work_mode": ["remote", "freelance"],
+  "location": {
+    "country": "Argentina",
+    "city": "Córdoba",
+    "timezone": "America/Argentina/Cordoba"
+  },
+  "languages": ["es", "en"],
+  "search_tags": ["ai agent developer", "claude api", "mcp server", "agentic ai", "llm engineer"],
+  "boards": ["tech", "universal"],
+  "cv_path": "",
+  "portfolio_url": "",
+  "linkedin_url": "",
+  "github_url": "",
+  "contact": {
+    "email": "",
+    "phone": ""
+  },
+  "twitter": {
+    "enabled": false,
+    "searches": []
+  },
+  "apply": {
+    "keywords": [],
+    "exclude_keywords": ["10+ years", "15+ years", "senior staff", "principal engineer"],
+    "auto_apply": false,
+    "cover_letter_style": "direct"
+  },
+  "setup_complete": true,
+  "setup_date": "2026-01-01"
+}

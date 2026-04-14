@@ -1,0 +1,30 @@
+{
+  "name": "job-hunter",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.mjs",
+    "setup": "node setup.mjs",
+    "scout": "node scout-api.mjs",
+    "daemon": "node daemon.mjs",
+    "hunt": "node daemon.mjs --once"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "chrome-cookies-secure": "^3.0.1",
+    "dotenv": "^17.3.1",
+    "googleapis": "^171.4.0",
+    "linkedin-jobs-scraper": "^18.0.1",
+    "nodemailer": "^8.0.1",
+    "pdf-parse": "^1.1.1",
+    "playwright": "^1.58.2",
+    "playwright-extra": "^4.3.6",
+    "playwright-extra-plugin-stealth": "^0.0.1",
+    "rebrowser-patches": "^1.0.19"
+  }
+}
