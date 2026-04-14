@@ -4,7 +4,7 @@ const API = 'http://localhost:4242/api';
 const GOAL = 2500;
 let allApps = [];
 let allIncome = [];
-let currentView = 'chat';
+let currentView = 'kanban';
 let sse = null;
 let _refreshTimer = null;
 const debouncedLoadAll = () => { clearTimeout(_refreshTimer); _refreshTimer = setTimeout(loadAll, 5000); };
@@ -118,8 +118,6 @@ function switchTab(view, el) {
   document.getElementById('directoryView').style.display = view === 'directory' ? 'block' : 'none';
   document.getElementById('monetizeView').style.display  = view === 'monetize'  ? 'block' : 'none';
   document.getElementById('researchView').style.display  = view === 'research'  ? 'block' : 'none';
-  const cv = document.getElementById('chatView');
-  if (cv) cv.style.display = view === 'chat' ? 'flex' : 'none';
   const ov = document.getElementById('orgchartView');
   if (ov) ov.style.display = view === 'orgchart' ? 'block' : 'none';
   renderView();
