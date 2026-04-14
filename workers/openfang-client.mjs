@@ -100,7 +100,7 @@ Requirements:
 - Mention 2-3 specific skills that match
 - Express genuine interest
 - End with clear CTA
-- Sign as Alexis Aguirre`;
+- Sign with the candidate's name from profile`;
   return sendMessage('writer', prompt, { retries: 2, retryDelay: 5000 });
 }
 
