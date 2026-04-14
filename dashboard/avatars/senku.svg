@@ -1,6 +1,59 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
-  <rect width="80" height="80" rx="40" fill="#1e1500"/>
-  <rect width="80" height="80" rx="40" fill="#f97316" opacity="0.15"/>
-  <circle cx="40" cy="40" r="38" stroke="#f97316" stroke-width="2" fill="none" opacity="0.4"/>
-  <text x="40" y="47" font-family="system-ui,sans-serif" font-size="28" font-weight="700" fill="#f97316" text-anchor="middle">S</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
+  <!-- Background circle -->
+  <circle cx="60" cy="60" r="60" fill="#1a0f00"/>
+  <circle cx="60" cy="60" r="58" fill="none" stroke="#f97316" stroke-width="1.5" opacity="0.5"/>
+
+  <!-- Neck -->
+  <rect x="50" y="88" width="20" height="14" rx="4" fill="#e8c49a"/>
+
+  <!-- Lab coat collar -->
+  <path d="M38 102 Q60 96 82 102 L88 120 H32 Z" fill="#e8e8e8"/>
+  <path d="M60 96 L54 120" stroke="#ccc" stroke-width="1" fill="none"/>
+  <path d="M60 96 L66 120" stroke="#ccc" stroke-width="1" fill="none"/>
+
+  <!-- Face -->
+  <ellipse cx="60" cy="72" rx="22" ry="24" fill="#e8c49a"/>
+
+  <!-- Ear left -->
+  <ellipse cx="37" cy="73" rx="4.5" ry="6" fill="#e8c49a"/>
+  <!-- Ear right -->
+  <ellipse cx="83" cy="73" rx="4.5" ry="6" fill="#e8c49a"/>
+
+  <!-- Hair — Dr. Stone: dark spiky hair with white streak -->
+  <!-- Main dark hair mass -->
+  <ellipse cx="60" cy="52" rx="24" ry="20" fill="#1a1a1a"/>
+  <!-- Spiky hair top -->
+  <path d="M40 50 Q38 30 48 22 Q52 38 50 46" fill="#1a1a1a"/>
+  <path d="M50 44 Q50 24 60 16 Q64 32 62 44" fill="#1a1a1a"/>
+  <path d="M62 44 Q66 22 74 26 Q70 38 68 46" fill="#1a1a1a"/>
+  <path d="M68 48 Q76 28 84 34 Q78 44 74 50" fill="#1a1a1a"/>
+  <!-- White streak (signature Senku feature) -->
+  <path d="M56 20 Q59 38 60 46" stroke="white" stroke-width="3.5" fill="none" stroke-linecap="round" opacity="0.9"/>
+  <!-- Hair sides -->
+  <path d="M36 56 Q34 66 36 74" stroke="#1a1a1a" stroke-width="8" fill="none" stroke-linecap="round"/>
+  <path d="M84 56 Q86 66 84 74" stroke="#1a1a1a" stroke-width="8" fill="none" stroke-linecap="round"/>
+
+  <!-- Eyebrows — sharp/determined -->
+  <path d="M44 66 Q50 62 56 65" stroke="#1a1a1a" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M64 65 Q70 62 76 66" stroke="#1a1a1a" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+  <!-- Eyes — sharp, confident -->
+  <ellipse cx="50" cy="70" rx="5.5" ry="4.5" fill="white"/>
+  <ellipse cx="70" cy="70" rx="5.5" ry="4.5" fill="white"/>
+  <circle cx="51" cy="70" r="3" fill="#1a6e4a"/>
+  <circle cx="71" cy="70" r="3" fill="#1a6e4a"/>
+  <circle cx="52" cy="69" r="1.2" fill="black"/>
+  <circle cx="72" cy="69" r="1.2" fill="black"/>
+  <!-- Eye shine -->
+  <circle cx="53" cy="68" r="1" fill="white" opacity="0.8"/>
+  <circle cx="73" cy="68" r="1" fill="white" opacity="0.8"/>
+
+  <!-- Nose -->
+  <path d="M59 76 Q61 78 63 76" stroke="#c9a07a" stroke-width="1.2" fill="none"/>
+
+  <!-- Smirk — signature Senku expression -->
+  <path d="M50 84 Q60 90 70 84" stroke="#c07060" stroke-width="2" fill="none" stroke-linecap="round"/>
+
+  <!-- Stone crack mark on cheek (Dr. Stone detail) -->
+  <path d="M37 70 L41 74 L38 78" stroke="#f97316" stroke-width="1" fill="none" opacity="0.6" stroke-linecap="round"/>
 </svg>
