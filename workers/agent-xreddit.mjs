@@ -240,3 +240,4 @@ for (const { sub, q } of REDDIT_SEARCHES) {
 log('complete', `+${totalSiftly} siftly +${totalX} x.com +${totalReddit} reddit`);
 console.log(`\n✅ Kaguya done: Siftly +${totalSiftly} | X +${totalX} | Reddit +${totalReddit}`);
 db.close();
+process.exit(0);

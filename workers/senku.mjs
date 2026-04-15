@@ -160,10 +160,12 @@ async function runTask(taskType, overrides = {}, taskId) {
     log('done', `${reg.name}: ${out.replace(/\n/g,' ').slice(0,150)}`);
     return { ok: true, output: out };
   } catch (e) {
-    const err = e.message.slice(0, 300);
-    if (taskId) db.prepare(`UPDATE task_queue SET status='failed', completed_at=datetime('now'), error=? WHERE id=?`).run(err, taskId);
-    log('error', `${reg.name} (${reg.script}): ${err.slice(0,120)}`, 'error');
-    return { ok: false, error: err };
+    const errMsg  = e.message || '';
+    const errOut  = (e.stderr || e.stdout || '').slice(0, 400);
+    const fullErr = (errMsg + (errOut ? '\n--- stderr ---\n' + errOut : '')).slice(0, 600);
+    if (taskId) db.prepare(`UPDATE task_queue SET status='failed', completed_at=datetime('now'), error=? WHERE id=?`).run(fullErr, taskId);
+    log('error', `${reg.name} (${reg.script}): ${fullErr.replace(/\n/g,' ').slice(0,200)}`, 'error');
+    return { ok: false, error: fullErr };
   }
 }
 

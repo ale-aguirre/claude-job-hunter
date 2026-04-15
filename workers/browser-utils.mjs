@@ -96,7 +96,8 @@ export async function getBrowser({ newPage = true } = {}) {
         close: async () => {
           try { await page?.close(); } catch {}
           try { await context.close(); } catch {}
-          // Don't close browser — Chrome mirror stays alive for next script
+          // Disconnect Playwright from CDP (doesn't kill Chrome, just releases WebSocket)
+          try { await browser.close(); } catch {}
         },
       };
     } catch (e) {

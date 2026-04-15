@@ -145,8 +145,10 @@ async function cycle() {
     log('senku_done', out.replace(/\n/g,' ').slice(0,200));
     console.log(out);
   } catch (e) {
-    log('senku_error', e.message.slice(0,200), 'error');
-    console.error('[daemon] Senku error:', e.message.slice(0,120));
+    const senkuStderr = (e.stderr || '').slice(0, 400);
+    log('senku_error', (e.message + (senkuStderr ? '\n' + senkuStderr : '')).slice(0, 400), 'error');
+    console.error('[daemon] Senku error:', e.message.slice(0, 200));
+    if (senkuStderr) console.error('[daemon] Senku stderr:', senkuStderr);
   }
 
   // Event-driven: if scout found new jobs, trigger an immediate apply (same cycle)
