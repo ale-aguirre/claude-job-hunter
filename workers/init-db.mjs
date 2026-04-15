@@ -52,7 +52,33 @@ db.exec(`
     notes       TEXT DEFAULT '',
     updated_at  TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS agent_signals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_key   TEXT NOT NULL,
+    signal      TEXT NOT NULL,
+    reason      TEXT DEFAULT '',
+    created_by  TEXT DEFAULT '',
+    resolved_at TEXT,
+    created_at  TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS task_queue (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_name       TEXT NOT NULL,
+    task_type        TEXT NOT NULL,
+    payload          TEXT DEFAULT '{}',
+    status           TEXT DEFAULT 'pending',
+    priority         INTEGER DEFAULT 5,
+    reason           TEXT DEFAULT '',
+    success_criteria TEXT DEFAULT '',
+    result           TEXT DEFAULT '',
+    error            TEXT DEFAULT '',
+    created_at       TEXT DEFAULT (datetime('now')),
+    started_at       TEXT,
+    completed_at     TEXT
+  );
 `);
 
 db.close();
-console.log('jobs.db initialized.');
+console.log('applications.db initialized.');
