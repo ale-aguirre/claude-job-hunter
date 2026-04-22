@@ -50,6 +50,23 @@ const EXTRA_KEYWORDS = (process.env.EXTRA_KEYWORDS || '').split(',').map(k => k.
 const ALL_SEARCH_TERMS = [...new Set([...SEARCH_TAGS, ...EXTRA_KEYWORDS])];
 if (EXTRA_KEYWORDS.length) console.log(`Extra keywords: ${EXTRA_KEYWORDS.join(', ')}`);
 
+// Tech stack exclusions — reject jobs focused on technologies not in the profile
+const EXCLUDE_TECH_DEFAULT = 'ruby,rails,php,laravel,java,kotlin,android,.net,c#,swift,ios,golang,rust,c++,elixir,django,flask,python developer,data scientist,data engineer,devops,sre,site reliability,salesforce,sap,cobol,perl,scala';
+const EXCLUDE_TECH = (process.env.EXCLUDE_TECH || EXCLUDE_TECH_DEFAULT)
+  .split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+
+// Role exclusions — reject non-dev roles regardless of tech mentions
+const EXCLUDE_ROLES = [
+  'product designer', 'ux designer', 'ui designer', 'graphic designer',
+  'visual designer', 'brand designer', 'motion designer', 'web designer',
+  'product manager', 'project manager', 'program manager',
+  'recruiter', 'recruiting', 'talent acquisition',
+  'sales manager', 'channel partner', 'account manager', 'account executive',
+  'marketing manager', 'growth manager', 'customer success',
+  'data analyst', 'business analyst', 'financial analyst',
+  'artist', 'illustrator', 'animator',
+];
+
 // Aggregator domains — never insert these (we scrape them directly via their APIs)
 const AGGREGATOR_DOMAINS = ['linkedin.com', 'indeed.com', 'glassdoor.com', 'ziprecruiter.com', 'monster.com'];
 
@@ -81,9 +98,16 @@ function hasLowSalary(text = '') {
 
 function isRelevant(title = '', tags = [], notes = '') {
   const combined = `${title} ${tags.join(' ')} ${notes}`.toLowerCase();
+  const titleOnly = title.toLowerCase();
 
   // Reject if low salary detected
   if (hasLowSalary(combined)) return false;
+
+  // Reject if title is dominated by excluded tech stack
+  if (EXCLUDE_TECH.some(t => titleOnly.includes(t))) return false;
+
+  // Reject non-dev roles
+  if (EXCLUDE_ROLES.some(r => titleOnly.includes(r))) return false;
 
   // Accept if matches search terms
   return ALL_SEARCH_TERMS.some(k => combined.includes(k.toLowerCase()));
@@ -210,6 +234,12 @@ const GREENHOUSE_BOARDS = [
   'auth0', 'globant', 'mercadolibre',
   // AI companies (creciendo, contratan fullstack)
   'huggingface', 'cohere', 'runway',
+  // Europa (UK/EU startups y scaleups remotas)
+  'hotjar', 'pitch', 'pleo', 'contentful', 'personio', 'typeform',
+  'factorial', 'wise', 'monzo', 'revolut', 'loom', 'doist',
+  'remote-com', 'whereby', 'miro', 'pipedrive', 'toggl',
+  // Oceanía / Asia-Pacific (remotas globales)
+  'atlassian', 'canva', 'dovetail',
 ];
 
 async function scrapeGreenhouse() {
@@ -254,6 +284,11 @@ const ASHBY_BOARDS = [
   'perplexity', 'openai', 'cognition', 'runway',
   // Others worth trying
   'inngest', 'trigger', 'highlight', 'june', 'statsig',
+  // Europa — startups que usan Ashby
+  'lemon-io', 'sketch', 'localyze', 'leapsome', 'kenjo',
+  'smallpdf', 'userleap', 'passionfroot', 'mobbin', 'rows',
+  // Asia-Pacific
+  'roboflow', 'whiterabbitneo',
 ];
 
 async function scrapeAshby() {
@@ -755,6 +790,53 @@ async function scrapeHNWhoIsHiring() {
   return count;
 }
 
+// ─── 18. EUROPE REMOTELY ─────────────────────────────────────────────────────
+async function scrapeEuropeRemotely() {
+  let count = 0;
+  try {
+    const r = await fetch('https://europeremotely.com/feed', { headers: { 'User-Agent': 'Mozilla/5.0' } });
+    if (!r.ok) { console.log('  EuropeRemotely: feed failed'); return 0; }
+    const xml = await r.text();
+    const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
+    for (const [, item] of items) {
+      const title   = (item.match(/<title><!\[CDATA\[(.*?)\]\]><\/title>/) || item.match(/<title>(.*?)<\/title>/))?.[1]?.trim() || '';
+      const link    = item.match(/<link>(.*?)<\/link>/)?.[1]?.trim() || '';
+      const company = item.match(/<author>(.*?)<\/author>/)?.[1]?.trim() || item.match(/<dc:creator>(.*?)<\/dc:creator>/)?.[1]?.trim() || 'EU Company';
+      if (!title || !link) continue;
+      if (!isRelevant(title, [])) continue;
+      if (upsertJob(company, title, link, 'europeremotely', 'EuropeRemotely | Remote')) count++;
+    }
+  } catch (e) { console.log(`  EuropeRemotely: error ${e.message?.slice(0, 60)}`); }
+  console.log(`  EuropeRemotely: +${count} new`);
+  return count;
+}
+
+// ─── 19. JOBGETHER (Europa + global remoto) ───────────────────────────────────
+async function scrapeJobgether() {
+  let count = 0;
+  try {
+    const tags = ['react', 'typescript', 'next.js', 'ai', 'automation'];
+    for (const tag of tags) {
+      const r = await fetch(`https://jobgether.com/api/v1/positions?remote=true&tags=${encodeURIComponent(tag)}&limit=30`, {
+        headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      });
+      if (!r.ok) continue;
+      const d = await r.json();
+      for (const job of (d.positions || d.data || d || [])) {
+        const title   = job.title || job.name || '';
+        const company = job.company?.name || job.companyName || 'Unknown';
+        const url     = job.url || job.applyUrl || job.link || '';
+        if (!title || !url) continue;
+        if (!isRelevant(title, job.tags || [])) continue;
+        if (upsertJob(company, title, url, 'jobgether', `Jobgether | Remote | ${tag}`)) count++;
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+  } catch (e) { console.log(`  Jobgether: error ${e.message?.slice(0, 60)}`); }
+  console.log(`  Jobgether: +${count} new`);
+  return count;
+}
+
 // Google/Indeed/Career discovery moved to scout-browser.mjs (needs real browser, not fetch)
 
 // ─── RUN ──────────────────────────────────────────────────────────────────
@@ -773,6 +855,8 @@ const results = await Promise.allSettled([
   scrapeGetOnBrd(),
   scrapeJobicy(),
   scrapeWorkana(),
+  scrapeEuropeRemotely(),
+  scrapeJobgether(),
   // Local LATAM portals — always run (even without city, search nationally)
   scrapeBumeran(),
   scrapeComputrabajo(),

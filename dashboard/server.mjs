@@ -24,7 +24,7 @@ if (_profileName) {
   process.env.HUNTDESK_DB_PATH = path.join(_profileDir, 'applications.db');
 } else {
   ENV_PATH = path.join(__serverDir, '.env');
-  dotenv.config();
+  dotenv.config({ path: ENV_PATH });
 }
 
 const require = createRequire(import.meta.url);

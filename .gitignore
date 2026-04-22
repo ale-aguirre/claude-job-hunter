@@ -2,6 +2,9 @@
 profile.json
 jobs.db
 applications.db
+dashboard/profiles/
+.qlaude/
+workers/.qlaude/
 
 # Environment
 .env
