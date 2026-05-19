@@ -15,11 +15,9 @@ import { existsSync } from 'fs';
 const db      = openDB();
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
 
-const SIFTLY_DB = process.env.SIFTLY_DB_PATH ||
-  `${process.env.HOME}/Downloads/Alexis/tools/Siftly/prisma/dev.db`;
+const SIFTLY_DB = process.env.SIFTLY_DB_PATH || '';
 
-// X Bearer — mismo que usa el web client de X (público)
-const X_BEARER = 'AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA';
+const X_BEARER = process.env.X_BEARER_TOKEN || '';
 
 const AGENT = 'XRedditAgent';
 const log = (action, detail, status = 'ok') => {

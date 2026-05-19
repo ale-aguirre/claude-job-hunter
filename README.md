@@ -1,157 +1,155 @@
 # claude-job-hunter
 
-**A job hunting agent built on top of Claude Code.** No API keys required — Claude is the engine.
+**Agente de búsqueda laboral construido sobre Claude Code, pensado para LATAM.** No necesita API keys: Claude es el motor.
 
-You talk to it with slash commands. It searches job boards, scans social media, writes cover letters, and applies automatically. Works for any profession.
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org)
-[![Claude Code](https://img.shields.io/badge/Claude%20Code-required-blueviolet)](https://claude.ai/code)
-[![Support](https://img.shields.io/badge/Support-Ko--fi-ff5e5b)](https://ko-fi.com/aleaguirre)
+Le hablás con slash commands. Busca trabajos en boards regionales y remotos, escribe cover letters en español/inglés según corresponda, y aplica con human-in-the-loop antes de enviar.
 
 ---
 
-## How it works
+## Cómo funciona
 
-You don't need an Anthropic API key. Claude Code (the app you already use) is the engine. The Node.js workers handle scraping and browser automation. Claude handles reasoning, prioritization, and writing.
+Claude Code (la app que ya usás) es el motor. Los workers en Node.js manejan scraping y automatización de browser. Claude maneja razonamiento, priorización y redacción.
 
 ```
-/job-hunter setup   ← first time, takes 2 minutes
-/job-hunter hunt    ← search for new jobs
-/job-hunter apply   ← review matches and apply
-/job-hunter status  ← see your pipeline
+/job-hunter setup   ← primera vez, 2 minutos
+/job-hunter hunt    ← buscar nuevas oportunidades
+/job-hunter apply   ← revisar matches y aplicar (con confirmación)
+/job-hunter status  ← ver el pipeline
 ```
 
 ---
 
-## Setup (2 minutes)
+## Setup (2 minutos)
 
-### 1. Install Claude Code
+### 1. Instalar Claude Code
 
 ```bash
 npm install -g @anthropic-ai/claude-code
 ```
 
-Already have it? Skip.
-
-### 2. Clone and install
+### 2. Clonar e instalar dependencias
 
 ```bash
 git clone https://github.com/ale-aguirre/claude-job-hunter
 cd claude-job-hunter/workers && npm install
 ```
 
-### 3. Add as a Claude Code skill
+### 3. Agregarlo como skill de Claude Code
 
 ```bash
 ln -s $(pwd)/.. ~/.claude/skills/job-hunter
 ```
 
-### 4. Run the wizard
+### 4. Correr el wizard
 
-Open Claude Code (terminal or desktop app) and type:
+Abrí Claude Code y escribí:
 
 ```
 /job-hunter setup
 ```
 
-The wizard asks 6 questions about your profile, generates `profile.json`, and runs a test search. Done.
+El wizard te pregunta 6 cosas, genera `profile.json` y corre una búsqueda de prueba.
 
 ---
 
-## Commands
+## Comandos
 
-| Command | What it does |
-|---------|-------------|
-| `/job-hunter setup` | Onboarding wizard — creates your profile |
-| `/job-hunter hunt` | Search job boards + X/Reddit for new opportunities |
-| `/job-hunter apply` | Review top matches and apply with AI-written cover letters |
-| `/job-hunter status` | Pipeline overview: found / applied / interviews |
-| `/job-hunter dashboard` | Open visual panel at `localhost:4242` |
-| `/job-hunter research <company>` | Deep research on a company before applying |
-| `/job-hunter letter <url>` | Generate a cover letter for any job URL |
-| `/job-hunter help` | Show all commands |
-
----
-
-## What it searches
-
-Configured automatically based on your profession. Always includes:
-
-- Remote OK, Remotive, We Work Remotely
-- Upwork, Contra, Workana (LATAM)
-- Torre, GetOnBrd (LATAM)
-- HN Who's Hiring, Reddit r/forhire
-- X/Twitter hiring posts (optional, needs Chrome session)
-
-For developers, also:
-- Arc.dev, Braintrust, Lemon.io, Andela, Wellfound
-- Outlier.ai, Scale AI, Alignerr (AI training gigs)
+| Comando | Qué hace |
+|---------|----------|
+| `/job-hunter setup` | Wizard de onboarding — genera tu perfil |
+| `/job-hunter hunt` | Busca en boards LATAM + remotos |
+| `/job-hunter apply` | Revisa los matches y aplica (con human-in-the-loop antes de submit) |
+| `/job-hunter status` | Estado del pipeline: encontrados / aplicados / entrevistas |
+| `/job-hunter dashboard` | Abre panel visual en `localhost:4242` |
+| `/job-hunter research <empresa>` | Investigación profunda antes de aplicar |
+| `/job-hunter letter <url>` | Cover letter para cualquier URL de job |
+| `/job-hunter help` | Lista todos los comandos |
 
 ---
 
-## Optional: Groq key for faster cover letters
+## Boards que busca
 
-Without a key, Claude handles everything. With a free Groq key, cover letters and scoring run faster:
+**LATAM (prioridad)**:
+- GetOnBrd, Torre, Workana, Computrabajo (AR/MX/CL/CO/PE), Bumeran (AR/MX/CL)
+- Reddit r/devsArgentina, r/PeruDev, r/mexicodevs (jobs threads)
+
+**Remoto internacional en USD**:
+- Remotive, RemoteOK, We Work Remotely
+- Arc.dev, Lemon.io, Wellfound, Braintrust
+- HN Who's Hiring mensual
+
+**Plataformas freelance / contract**:
+- Upwork, Contra
+- Outlier.ai, Alignerr (gigs de AI training pagados en USD)
+
+**Opcional con sesión activa de Chrome**:
+- LinkedIn (jobs feed + Easy Apply)
+- X/Twitter (búsqueda de hiring posts)
+
+La selección exacta se ajusta a tu profesión y modalidad (remoto / híbrido / presencial) según `profile.json`.
+
+---
+
+## Groq key opcional para cover letters más rápidas
+
+Sin key, Claude maneja todo. Con una key gratis de Groq, las cover letters y el scoring corren más rápido:
 
 ```bash
 # workers/.env
-GROQ_API_KEY=your_key_here   # free at groq.com
+GROQ_API_KEY=tu_key_aca   # gratis en groq.com
 ```
 
 ---
 
-## Optional: Dashboard
+## Dashboard opcional
 
 ```
 /job-hunter dashboard
 ```
 
-Opens a visual kanban board at `localhost:4242` showing all found/applied/interview jobs with agent activity.
+Abre un kanban visual en `localhost:4242` con jobs en estados found / applied / interview y actividad de los agentes.
 
 ---
 
-## Agents
+## Agentes internos
 
-Each agent is a specialized prompt that Claude runs as a subagent:
+Cada agente es un prompt especializado que Claude corre como subagente:
 
-| Agent | Anime | Role |
-|-------|-------|------|
-| Fern | Frieren | Searches job boards, classifies opportunities |
-| Kaguya | Kaguya-sama | Scans X/Twitter and Reddit for hiring posts |
-| Reigen | Mob Psycho | Fills ATS forms and submits applications |
-| Erwin | Attack on Titan | Market analysis — what to prioritize |
+| Agente | Rol |
+|--------|-----|
+| Fern | Busca en job boards, clasifica oportunidades |
+| Kaguya | Scrapea redes sociales (X, Reddit) para hiring posts |
+| Reigen | Llena formularios ATS y prepara aplicaciones |
+| Erwin | Análisis de mercado — qué priorizar |
 
-You can rename agents and swap avatars by editing `dashboard/src/agents.js`.
-
----
-
-## Privacy
-
-`profile.json`, `jobs.db`, and `.env` are in `.gitignore`. Nothing personal ever gets committed.
+Podés renombrar agentes y cambiarles avatar en `dashboard/src/agents.js`.
 
 ---
 
-## Requirements
+## Privacidad
 
-- [Claude Code](https://claude.ai/code) (CLI or desktop app)
+`profile.json`, `jobs.db` y `.env` están en `.gitignore`. Nada personal se sube al repo.
+
+---
+
+## Requisitos
+
+- [Claude Code](https://claude.ai/code) (CLI o app desktop)
 - Node.js 18+
 
-Optional:
-- Free [Groq API key](https://console.groq.com) for faster cover letters
-- Playwright MCP in Claude settings for automatic form-filling
-- Chrome with active sessions for Twitter/X scraping
+Opcional:
+- [Groq API key](https://console.groq.com) gratis para cover letters más rápidas
+- Playwright MCP en settings de Claude para auto-fill de formularios
+- Chrome con sesiones activas para LinkedIn y scraping de X
 
 ---
 
-## Support the project
+## Estado
 
-If this helped you find a job, consider a coffee:
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/aleaguirre)
+Proyecto activo, en uso personal. Sin promesas de soporte ni roadmap público. Si rompe algo, abrí un issue y miro cuando puedo.
 
 ---
 
-## License
+## Licencia
 
 MIT

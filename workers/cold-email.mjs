@@ -20,10 +20,10 @@ const DRY_RUN = process.argv.includes('--dry-run');
 const DO_SEND  = process.argv.includes('--send');
 const LIMIT    = parseInt(process.argv.find(a => a.startsWith('--limit='))?.split('=')[1] || '10');
 
-const PROFILE_TEXT = process.env.PROFILE_TEXT || 'AI agent developer with 5+ years building with Claude API, TypeScript, and Next.js.';
-const FIRST_NAME   = process.env.FIRST_NAME   || 'Alexis';
-const LAST_NAME    = process.env.LAST_NAME    || 'Aguirre';
-const GITHUB       = process.env.GITHUB       || 'https://github.com/ale-aguirre';
+const PROFILE_TEXT = process.env.PROFILE_TEXT || '';
+const FIRST_NAME   = process.env.FIRST_NAME   || '';
+const LAST_NAME    = process.env.LAST_NAME    || '';
+const GITHUB       = process.env.GITHUB       || '';
 
 const AGENT = 'Izumi';
 const log = (action, detail, status = 'ok') => {

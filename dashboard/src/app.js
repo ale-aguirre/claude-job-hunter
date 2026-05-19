@@ -413,11 +413,11 @@ function _renderWizStep() {
       <h2 style="margin:0 0 .3rem;font-size:1.35rem">👋 Bienvenido a HuntDesk</h2>
       <p style="color:var(--muted);font-size:.83rem;margin:0 0 1.5rem;line-height:1.5">Completá tu perfil para que los agentes puedan postularse en tu nombre de forma automática.</p>
       <div class="modal-grid">
-        <div class="fld"><label>Nombre *</label><input id="w_fn" value="${_wizData.fn||''}" placeholder="Alexis"/></div>
-        <div class="fld"><label>Apellido *</label><input id="w_ln" value="${_wizData.ln||''}" placeholder="Aguirre"/></div>
+        <div class="fld"><label>Nombre *</label><input id="w_fn" value="${_wizData.fn||''}" placeholder="Tu nombre"/></div>
+        <div class="fld"><label>Apellido *</label><input id="w_ln" value="${_wizData.ln||''}" placeholder="Tu apellido"/></div>
         <div class="fld"><label>Email *</label><input id="w_em" type="email" value="${_wizData.em||''}" placeholder="vos@gmail.com"/></div>
-        <div class="fld"><label>Teléfono</label><input id="w_ph" value="${_wizData.ph||''}" placeholder="+54 9 351 000 0000"/></div>
-        <div class="fld" style="grid-column:1/-1"><label>Ciudad, País</label><input id="w_ci" value="${_wizData.ci||''}" placeholder="Córdoba, Argentina"/></div>
+        <div class="fld"><label>Teléfono</label><input id="w_ph" value="${_wizData.ph||''}" placeholder="+54 9 ..."/></div>
+        <div class="fld" style="grid-column:1/-1"><label>Ciudad, País</label><input id="w_ci" value="${_wizData.ci||''}" placeholder="Ciudad, País"/></div>
       </div>`;
   } else if (_wizStep === 2) {
     content = `

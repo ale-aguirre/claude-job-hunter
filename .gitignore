@@ -5,6 +5,7 @@ applications.db
 dashboard/profiles/
 .qlaude/
 workers/.qlaude/
+workers/agents/memory/*.json
 
 # Environment
 .env
