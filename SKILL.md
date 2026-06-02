@@ -54,6 +54,33 @@ Devolvé un resumen estructurado con recomendación: aplicar / no aplicar / espe
 3. Escribí una cover letter de máximo 180 palabras, directa, sin fluff.
 4. Adaptala a la profesión del usuario (no siempre es tech).
 
+### `apply-now <url>` — Aplicar a un puesto específico (one-shot)
+### `apply-now "<texto del puesto>"` — Aplicar desde descripción pegada
+
+**Workflow completo:**
+
+1. **Parsear input** — URL o texto crudo.
+2. **Dry-run** — mostrá el preview antes de ejecutar:
+   - Con URL:   `Bash: cd workers && node apply-now.mjs --url="<url>" --dry-run`
+   - Con texto: `Bash: cd workers && node apply-now.mjs --text="<texto>" --dry-run`
+3. **Mostrar al usuario:** empresa, título, método detectado (email/form), cover letter generada.
+4. **Preguntar confirmación:** "¿Aplico con esto? [s/N]"
+5. **Con confirmación — ejecutar:**
+   - Con URL:   `Bash: cd workers && node apply-now.mjs --url="<url>"`
+   - Con texto: `Bash: cd workers && node apply-now.mjs --text="<texto>"`
+6. **Si el output contiene `[GMAIL_DRAFT_NEEDED]`** (sin SMTP configurado):
+   - Extraé los campos TO, SUBJECT y BODY del bloque.
+   - Usá el MCP de Gmail (`mcp__claude_ai_Gmail__create_draft`) para crear el borrador.
+   - Decile al usuario: "Borrador creado en Gmail — revisá y enviá desde ahí."
+   - Si el CV existe (`workers/.env` → `CV_PATH`), mencioná que debe adjuntarlo manualmente.
+7. **Reportar resultado** — confirmado / no verificado / bloqueado.
+
+**Notas:**
+- LinkedIn URLs → el script avisa que requiere sesión activa y sugiere manual.
+- Si hay form web → Playwright llena el form, sube el CV y hace submit.
+- Si hay email de contacto → envía por SMTP (si `GMAIL_APP_PASSWORD` en `.env`) o emite borrador.
+- Todo queda logueado en `workers/applications.db`.
+
 ### `help` — Ayuda
 Mostrá la lista de comandos con una línea de descripción cada uno.
 
