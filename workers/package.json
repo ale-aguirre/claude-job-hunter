@@ -7,8 +7,11 @@
     "start": "node server.mjs",
     "setup": "node setup.mjs",
     "scout": "node scout-api.mjs",
-    "daemon": "node daemon.mjs",
-    "hunt": "node daemon.mjs --once"
+    "filter": "node filter.mjs",
+    "draft": "node draft.mjs",
+    "approve": "node approve.mjs",
+    "digest": "node digest.mjs",
+    "send": "node email-apply.mjs"
   },
   "keywords": [],
   "author": "",

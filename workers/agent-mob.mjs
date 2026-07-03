@@ -24,11 +24,16 @@ const HEADLESS  = !args.includes('--visible');
 const LIMIT     = parseInt(args.find(a => a.startsWith('--limit='))?.split('=')[1] || '6');
 const ONLY_PLAT = args.find(a => a.startsWith('--platform='))?.split('=')[1];
 
+if (!process.env.JH_PASSWORD) {
+  console.error('[agent-mob] JH_PASSWORD not set in .env — aborting');
+  process.exit(1);
+}
+
 // Extends base profile with mob-specific fields
 const PROFILE = {
   ...BASE_PROFILE,
   fullName: `${BASE_PROFILE.firstName} ${BASE_PROFILE.lastName}`,
-  password: process.env.JH_PASSWORD || 'HuntDesk2025!',
+  password: process.env.JH_PASSWORD,
   title:    'React / Next.js Developer',
   location: BASE_PROFILE.city,
 };

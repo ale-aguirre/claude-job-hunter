@@ -38,3 +38,5 @@ output/
 screenshots/
 dashboard/node_modules
 workers/package-lock.json
+*.mp3
+*.mov
