@@ -9,6 +9,7 @@
 import 'dotenv/config';
 import { openDB, logDB } from './db-utils.mjs';
 import { buildEmail, cvFor } from './templates.mjs';
+import { scoreJob } from './rules.mjs';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const LIMIT   = parseInt(process.argv.find(a => a.startsWith('--limit='))?.split('=')[1] || '50');
@@ -35,6 +36,17 @@ console.log(`[draft] ${jobs.length} jobs to draft${DRY_RUN ? ' | DRY RUN' : ''}\
 let drafted = 0;
 
 for (const job of jobs) {
+  // GUARD: re-score with current rules; stale jobs that slipped through get blocked here
+  const guardScore = scoreJob(job);
+  if (guardScore < 0) {
+    if (!DRY_RUN) {
+      db.prepare(`UPDATE applications SET status='skipped', updated_at=datetime('now') WHERE id=?`).run(job.id);
+      logDB(db, 'draft', 'GUARD_SKIP', `${job.title} @ ${job.company}`);
+    }
+    console.log(`[GUARD_SKIP] ${job.title} @ ${job.company}`);
+    continue;
+  }
+
   const { subject, body, role, lang } = buildEmail(job);
   const cvPath = cvFor(role, lang);
 
