@@ -134,7 +134,7 @@ function validate(selection, facts, lang) {
     const valid = (ids || []).filter(id => {
       if (!bulletIds[expKey].has(id)) { errors.push(`unknown bullet id: ${id} in ${expKey}`); return false; }
       return true;
-    }).slice(0, 5); // max 5 bullets
+    }).slice(0, 4); // max 4 bullets (1-page constraint)
     selection.experience_bullet_ids[expKey] = valid;
   }
 
@@ -161,10 +161,26 @@ function validate(selection, facts, lang) {
     selection.summary = facts.summary_base[lang] || facts.summary_base.en;
   }
 
+  // Fix 1: summary floor — mínimo 25 palabras
+  const wordCount = (selection.summary || '').split(/\s+/).filter(Boolean).length;
+  if (wordCount < 25) {
+    errors.push(`summary too short (${wordCount} words < 25) — replaced with summary_base`);
+    selection.summary = facts.summary_base[lang] || facts.summary_base.en;
+  }
+
   if (errors.length > 0) {
     console.warn('[cv-tailor] validation warnings:', errors.join(' | '));
   }
   return errors;
+}
+
+// ── Fix 2: Núcleo fijo de skills ─────────────────────────────────────────────
+function enforceSkillCore(role, skillIdsFromLLM) {
+  const CORE      = ['sk_ts', 'sk_react', 'sk_next', 'sk_node'];
+  const AI_EXTRA  = ['sk_claude', 'sk_mcp'];
+  const mandatory = role === 'ai' ? [...CORE, ...AI_EXTRA] : [...CORE];
+  const rest      = (skillIdsFromLLM || []).filter(id => !mandatory.includes(id));
+  return [...mandatory, ...rest].slice(0, 12);
 }
 
 // ── HTML renderer (ATS-friendly, single-column) ───────────────────────────────
@@ -225,34 +241,33 @@ function renderHTML(selection, facts, lang) {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 10.5pt;
-    line-height: 1.4;
+    font-size: 10pt;
+    line-height: 1.3;
     color: #111;
-    padding: 18mm 18mm 14mm 18mm;
     max-width: 100%;
   }
-  h1 { font-size: 18pt; font-weight: bold; margin-bottom: 2px; }
-  .headline { font-size: 10.5pt; color: #333; margin-bottom: 4px; }
-  .contact { font-size: 9pt; color: #444; margin-bottom: 14px; }
+  h1 { font-size: 15pt; font-weight: bold; margin-bottom: 1px; }
+  .headline { font-size: 10pt; color: #333; margin-bottom: 3px; }
+  .contact { font-size: 8.5pt; color: #444; margin-bottom: 8px; }
   h2 {
-    font-size: 10pt;
+    font-size: 9.5pt;
     font-weight: bold;
     text-transform: uppercase;
     letter-spacing: 0.08em;
     border-bottom: 1px solid #333;
-    padding-bottom: 2px;
-    margin-top: 12px;
-    margin-bottom: 6px;
+    padding-bottom: 1px;
+    margin-top: 7px;
+    margin-bottom: 4px;
   }
-  p { margin-bottom: 4px; }
-  ul { margin-left: 16px; margin-bottom: 6px; }
-  li { margin-bottom: 2px; }
+  p { margin-bottom: 2px; }
+  ul { margin-left: 14px; margin-bottom: 3px; }
+  li { margin-bottom: 1px; }
   .exp-header { display: flex; justify-content: space-between; }
   .exp-header .role { font-weight: bold; }
-  .exp-header .period { font-size: 9.5pt; color: #444; }
-  .company { font-size: 9.5pt; color: #444; margin-bottom: 4px; }
-  .stack { font-size: 9pt; color: #555; margin-bottom: 3px; }
-  .project { margin-bottom: 8px; }
+  .exp-header .period { font-size: 9pt; color: #444; }
+  .company { font-size: 9pt; color: #444; margin-bottom: 3px; }
+  .stack { font-size: 8.5pt; color: #555; margin-bottom: 2px; }
+  .project { margin-bottom: 5px; }
   .skills-list { margin: 0; padding: 0; list-style: none; }
   .skills-list li { display: inline; }
   .skills-list li::after { content: " · "; color: #777; }
@@ -304,7 +319,7 @@ async function htmlToPDF(html, outPath) {
     await page.pdf({
       path: outPath,
       format: 'A4',
-      margin: { top: '12mm', bottom: '12mm', left: '12mm', right: '12mm' },
+      margin: { top: '10mm', bottom: '10mm', left: '12mm', right: '12mm' },
       printBackground: false,
     });
   } finally {
@@ -342,6 +357,9 @@ export async function tailorCV(job) {
 
       // 2. Validación determinística
       validate(selection, facts, lang);
+
+      // Fix 2: imponer núcleo fijo de skills
+      selection.skill_ids_ordered = enforceSkillCore(selection.headline_role, selection.skill_ids_ordered);
 
       // Asegurar que hay al menos algo
       if (!selection.experience_bullet_ids?.cd?.length) {
