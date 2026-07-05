@@ -63,7 +63,8 @@ for (const job of jobs) {
   const to      = TEST_TO || job.email_contact;
 
   const cvOk        = cvPath && existsSync(cvPath);
-  const attachments = cvOk ? [{ filename: basename(cvPath), path: cvPath }] : [];
+  // Always use a clean public filename — the internal job-id slug stays private
+  const attachments = cvOk ? [{ filename: 'Alexis_Aguirre_CV.pdf', path: cvPath }] : [];
 
   console.log(`-> [${job.score || 0}pts] ${job.title} @ ${job.company} | ${to} | CV: ${cvOk ? basename(cvPath) : 'MISSING'}`);
 

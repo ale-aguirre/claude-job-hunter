@@ -7,9 +7,11 @@
  * Run: node draft.mjs [--dry-run] [--limit=N]
  */
 import 'dotenv/config';
+import { basename } from 'path';
 import { openDB, logDB } from './db-utils.mjs';
 import { buildEmail, cvFor } from './templates.mjs';
 import { scoreJob } from './rules.mjs';
+import { tailorCV } from './cv-tailor.mjs';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const LIMIT   = parseInt(process.argv.find(a => a.startsWith('--limit='))?.split('=')[1] || '50');
@@ -48,7 +50,21 @@ for (const job of jobs) {
   }
 
   const { subject, body, role, lang } = buildEmail(job);
-  const cvPath = cvFor(role, lang);
+
+  // Intentar CV adaptado; fallback al estático si falla
+  let cvPath;
+  if (!DRY_RUN) {
+    const tailored = await tailorCV(job);
+    if (tailored?.path) {
+      cvPath = tailored.path;
+      console.log(`   [cv] tailored -> ${basename(cvPath)}`);
+    } else {
+      cvPath = cvFor(role, lang);
+      console.log(`   [cv] static fallback -> ${basename(cvPath)}`);
+    }
+  } else {
+    cvPath = cvFor(role, lang);
+  }
 
   console.log(`-> [${job.score || 0}pts ${role}/${lang}] ${job.title} @ ${job.company} | ${job.email_contact}`);
 
@@ -64,7 +80,7 @@ for (const job of jobs) {
     WHERE id=?
   `).run(body, cvPath, job.id);
 
-  logDB(db, 'draft', 'drafted', `${job.title} @ ${job.company}`);
+  logDB(db, 'draft', 'drafted', `${job.title} @ ${job.company} [cv:${basename(cvPath)}]`);
   drafted++;
 }
 

@@ -6,6 +6,7 @@
  * node approve.mjs reject 13         — mark id as 'rejected'
  */
 import 'dotenv/config';
+import { basename } from 'path';
 import { openDB, logDB } from './db-utils.mjs';
 
 const db   = openDB();
@@ -14,7 +15,7 @@ const cmd  = args[0] || 'list';
 
 if (cmd === 'list') {
   const drafts = db.prepare(`
-    SELECT id, score, title, company, email_contact, cover_letter
+    SELECT id, score, title, company, email_contact, cover_letter, cv_used
     FROM applications
     WHERE status='draft'
     ORDER BY score DESC, applied_at DESC
@@ -33,8 +34,9 @@ if (cmd === 'list') {
       .filter(l => l.trim())
       .slice(0, 3)
       .join('\n         ');
+    const cvLabel = d.cv_used ? basename(d.cv_used) : 'static';
     console.log(`  #${d.id} [${d.score || 0}pts] ${d.title} @ ${d.company}`);
-    console.log(`         -> ${d.email_contact}`);
+    console.log(`         -> ${d.email_contact} | CV: ${cvLabel}`);
     console.log(`         ${preview}\n`);
   }
   console.log(`Approve: node approve.mjs 1,2,3    Reject: node approve.mjs reject 4`);
