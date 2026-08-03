@@ -850,7 +850,10 @@ const results = await Promise.allSettled([
   scrapeHimalayas(),
   scrapeContra(),
   scrapeTorre(),
-  scrapeArbeitnow(),
+  // Arbeitnow disabled: 142 leads, 60 applied, 0 verifiable. Its listings are
+  // German-market roles whose apply flow gives no success state to read back,
+  // so every submission landed as UNVERIFIED. See docs/EVAL.md.
+  // scrapeArbeitnow(),
   scrapeTheMuse(),
   scrapeGetOnBrd(),
   scrapeJobicy(),
