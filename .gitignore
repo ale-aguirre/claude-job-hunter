@@ -45,3 +45,7 @@ workers/package-lock.json
 # CV tailoring — PII + generated PDFs
 workers/cv-facts.json
 workers/cv-out/
+
+# eval run artifacts
+workers/evals/results*.json
+.promptfoo/

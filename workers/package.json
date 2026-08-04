@@ -29,5 +29,8 @@
     "playwright-extra": "^4.3.6",
     "playwright-extra-plugin-stealth": "^0.0.1",
     "rebrowser-patches": "^1.0.19"
+  },
+  "devDependencies": {
+    "promptfoo": "^0.120.19"
   }
 }
