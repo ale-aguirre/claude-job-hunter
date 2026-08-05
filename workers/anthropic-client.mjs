@@ -14,7 +14,11 @@ dotenv.config({ override: true });
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_API_KEY || '';
 const GROQ_KEY       = process.env.GROQ_API_KEY       || '';
 const SONNET_MODEL   = 'claude-sonnet-4-6';
-const GROQ_MODEL     = 'llama-3.3-70b-versatile';
+// Groq announced llama-3.3-70b-versatile is being decommissioned (email, 2026-07-02).
+// gpt-oss-120b is the replacement: still on Groq, returns clean JSON, and unlike
+// qwen3.6-27b it does not emit a <think> block that has to be stripped.
+// Override with GROQ_MODEL in .env without touching this file.
+const GROQ_MODEL     = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'deepseek-r1:8b';
 const OLLAMA_BASE    = process.env.OLLAMA_BASE  || 'http://localhost:11434';
 
@@ -48,6 +52,11 @@ async function callGroqRaw(system, user, maxTokens = 1500) {
     body: JSON.stringify({
       model: GROQ_MODEL,
       max_tokens: maxTokens,
+      // gpt-oss models think before answering and the thinking is billed against
+      // max_tokens. On a small budget the reply is truncated to an empty string:
+      // finish_reason comes back as "length" with no content. 'low' keeps the
+      // answer inside the budget. Ignored by models that do not reason.
+      reasoning_effort: 'low',
       messages: [
         { role: 'system', content: system },
         { role: 'user',   content: user   },
@@ -57,7 +66,11 @@ async function callGroqRaw(system, user, maxTokens = 1500) {
   });
   if (!r.ok) throw new Error(`Groq ${r.status}: ${(await r.text()).slice(0, 100)}`);
   const d = await r.json();
-  return d.choices?.[0]?.message?.content || '';
+  const choice = d.choices?.[0];
+  if (!choice?.message?.content && choice?.finish_reason === 'length') {
+    throw new Error(`Groq: reply truncated before any content (max_tokens=${maxTokens})`);
+  }
+  return choice?.message?.content || '';
 }
 
 // ── Ollama local (last resort) ───────────────────────────────────────────────
