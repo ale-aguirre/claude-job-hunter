@@ -6,7 +6,9 @@ It scouts 17 job board APIs, scores each posting against your CV, tailors that C
 per posting against a fixed set of facts, submits through the ATS, and then reads
 the page back to confirm the application actually landed.
 
-Runs on your Claude Code session. No API keys required.
+Runs on your Claude Code session. The skill workflow needs no extra keys; the
+standalone workers (scout, tailor, apply) want a `GROQ_API_KEY` or
+`ANTHROPIC_API_KEY` in `workers/.env` — see `.env.example`.
 
 ```
 1,212 leads processed
@@ -98,7 +100,10 @@ your prompts to a third party.
 ```bash
 git clone https://github.com/ale-aguirre/claude-job-hunter
 cd claude-job-hunter/workers && npm install
+# macOS / Linux
 ln -s $(pwd)/.. ~/.claude/skills/job-hunter
+# Windows (PowerShell, elevated)
+# New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.claude\skills\job-hunter" -Target (Resolve-Path ..)
 ```
 
 Then, in Claude Code:
