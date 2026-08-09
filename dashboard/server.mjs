@@ -31,8 +31,8 @@ const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
 
 const PORT = parseInt(process.env.PORT || '4242');
-const DB_PATH = process.env.HUNTDESK_DB_PATH || new URL('applications.db', import.meta.url).pathname;
-const HTML_PATH = new URL('index.html', import.meta.url).pathname;
+const DB_PATH = process.env.HUNTDESK_DB_PATH || path.join(__serverDir, 'applications.db');
+const HTML_PATH = path.join(__serverDir, 'index.html');
 
 const db = new Database(DB_PATH);
 db.exec(`
@@ -171,7 +171,7 @@ const server = createServer(async (req, res) => {
   if (urlPath.startsWith('/src/')) {
     const ext = urlPath.split('.').pop();
     const mime = ext === 'css' ? 'text/css' : ext === 'js' ? 'application/javascript' : 'text/plain';
-    const filePath = new URL('.' + urlPath, import.meta.url).pathname;
+    const filePath = path.join(__serverDir, '.' + urlPath);
     if (existsSync(filePath)) {
       res.writeHead(200, { 'Content-Type': mime + '; charset=utf-8', 'Cache-Control': 'no-cache' });
       return res.end(readFileSync(filePath));
@@ -183,7 +183,7 @@ const server = createServer(async (req, res) => {
   if (urlPath.startsWith('/avatars/')) {
     const base = urlPath.replace(/\.(png|svg)$/, '');
     for (const ext of ['.png', '.svg']) {
-      const avatarPath = new URL('.' + base + ext, import.meta.url).pathname;
+      const avatarPath = path.join(__serverDir, '.' + base + ext);
       if (existsSync(avatarPath)) {
         const ct = ext === '.svg' ? 'image/svg+xml' : 'image/png';
         res.writeHead(200, { 'Content-Type': ct, 'Cache-Control': 'no-cache, must-revalidate' });
@@ -243,7 +243,7 @@ const server = createServer(async (req, res) => {
   if (urlPath === '/api/export') {
     const apps    = db.prepare('SELECT * FROM applications').all();
     const income  = db.prepare('SELECT * FROM income_streams').all();
-    const agentCfgPath = new URL('agents-config.json', import.meta.url).pathname;
+    const agentCfgPath = path.join(__serverDir, 'agents-config.json');
     let agentCfg = {};
     try { agentCfg = JSON.parse(readFileSync(agentCfgPath, 'utf8')); } catch {}
     const backup = {
@@ -365,7 +365,7 @@ Last agent actions: ${logs.map(l=>`${l.agent}:${l.action}`).join(', ')}.`;
 
   // ─── Agent Config (custom names + avatar metadata) ────────
   if (urlPath === '/api/agents/config') {
-    const cfgPath = new URL('agents-config.json', import.meta.url).pathname;
+    const cfgPath = path.join(__serverDir, 'agents-config.json');
     if (req.method === 'GET') {
       try { return json(res, JSON.parse(readFileSync(cfgPath, 'utf8'))); }
       catch { return json(res, {}); }
@@ -386,7 +386,7 @@ Last agent actions: ${logs.map(l=>`${l.agent}:${l.action}`).join(', ')}.`;
     const match = data.dataUrl.match(/^data:image\/(png|jpeg|webp);base64,(.+)$/);
     if (!match) return json(res, { error: 'invalid image format' }, 400);
     const imgBuf = Buffer.from(match[2], 'base64');
-    const avatarPath = new URL(`./avatars/${agentName}.png`, import.meta.url).pathname;
+    const avatarPath = path.join(__serverDir, 'avatars', `${agentName}.png`);
     writeFileSync(avatarPath, imgBuf);
     return json(res, { ok: true, path: `/avatars/${agentName}.png` });
   }
