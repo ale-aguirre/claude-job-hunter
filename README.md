@@ -1,155 +1,169 @@
 # claude-job-hunter
 
-**Agente de búsqueda laboral construido sobre Claude Code, pensado para LATAM.** No necesita API keys: Claude es el motor.
+**An autonomous job search agent that can prove what it sent.**
 
-Le hablás con slash commands. Busca trabajos en boards regionales y remotos, escribe cover letters en español/inglés según corresponda, y aplica con human-in-the-loop antes de enviar.
+It scouts 17 job board APIs, scores each posting against your CV, tailors that CV
+per posting against a fixed set of facts, submits through the ATS, and then reads
+the page back to confirm the application actually landed.
 
----
-
-## Cómo funciona
-
-Claude Code (la app que ya usás) es el motor. Los workers en Node.js manejan scraping y automatización de browser. Claude maneja razonamiento, priorización y redacción.
+Runs on your Claude Code session. No API keys required.
 
 ```
-/job-hunter setup   ← primera vez, 2 minutos
-/job-hunter hunt    ← buscar nuevas oportunidades
-/job-hunter apply   ← revisar matches y aplicar (con confirmación)
-/job-hunter status  ← ver el pipeline
+1,212 leads processed
+  316 applications submitted autonomously
+  248 verified on the target page after submitting
 ```
 
 ---
 
-## Setup (2 minutos)
+## Why the verification matters
 
-### 1. Instalar Claude Code
+The aggregate confirmation rate was a healthy-looking 78%. Grading delivery per
+channel instead of in total told a different story:
+
+| Channel | Sent | Confirmed | Rate |
+|---|---|---|---|
+| Ashby | 174 | 174 | 100% |
+| Greenhouse | 52 | 52 | 100% |
+| Himalayas | 18 | 18 | 100% |
+| Jobicy | 4 | 4 | 100% |
+| Arbeitnow | 60 | 0 | **0%** |
+
+Four integrations working perfectly and one failing silently for months. The
+average had been hiding it. That integration is now disabled.
+
+Full write-up in [`docs/EVAL.md`](docs/EVAL.md).
+
+---
+
+## The CV is tailored, and it cannot lie
+
+Every claim the model makes is checked against `cv-facts.json` before anything is
+rendered. Any id it invents is dropped, and any technology it names that is not in
+the profile replaces the summary with the base text.
+
+This is not decoration. A prompt injection hidden inside a job description made
+the model write *"10 years of Kubernetes"* into the summary. The instructions in
+the system prompt did not stop it. The deterministic validator did.
+
+That routing pattern was extracted into a standalone library:
+[intent-gate](https://github.com/ale-aguirre/intent-gate).
+
+---
+
+## Evals
+
+A [promptfoo](https://promptfoo.dev) suite runs over the CV tailoring stage. It
+grades the model and the validator separately, because a model that tries to
+fabricate and gets caught is a different outcome from one that succeeds:
+
+| Grader | Reads | Question |
+|---|---|---|
+| `noUndeclaredTech` | model output | Did it try to fabricate a skill? |
+| `shippedOutputClean` | final document | Did anything fabricated survive? |
+| `idsAllReal` | model output | Are all referenced facts real? |
+| `roleMatches` | model output | Did it route to the right CV variant? |
 
 ```bash
-npm install -g @anthropic-ai/claude-code
+cd workers/evals && npx promptfoo eval
 ```
 
-### 2. Clonar e instalar dependencias
+The suite paid for itself when Groq deprecated a model: swapping to
+`gpt-oss-120b` moved `summaryLength` from failing 7/7 to passing, which revealed
+that the per-posting summary had been silently falling back to a generic one on
+every single application.
+
+Details in [`docs/EVAL-CV-TAILOR.md`](docs/EVAL-CV-TAILOR.md).
+
+---
+
+## Observability
+
+Every LLM call is traced with the OpenTelemetry SDK using the GenAI semantic
+conventions, exported to a `spans` table in the same SQLite file.
+
+```
+model                  calls   avg latency   tokens   cost
+openai/gpt-oss-120b        8        1187ms     9128   $0.0026
+```
+
+One tailored CV costs $0.0003 and takes 1.2 seconds. Local export rather than a
+hosted backend: answering "what did this run cost" should not require shipping
+your prompts to a third party.
+
+---
+
+## Setup
 
 ```bash
 git clone https://github.com/ale-aguirre/claude-job-hunter
 cd claude-job-hunter/workers && npm install
-```
-
-### 3. Agregarlo como skill de Claude Code
-
-```bash
 ln -s $(pwd)/.. ~/.claude/skills/job-hunter
 ```
 
-### 4. Correr el wizard
-
-Abrí Claude Code y escribí:
+Then, in Claude Code:
 
 ```
 /job-hunter setup
 ```
 
-El wizard te pregunta 6 cosas, genera `profile.json` y corre una búsqueda de prueba.
+The wizard asks six questions and writes `profile.json`.
 
 ---
 
-## Comandos
+## Commands
 
-| Comando | Qué hace |
-|---------|----------|
-| `/job-hunter setup` | Wizard de onboarding — genera tu perfil |
-| `/job-hunter hunt` | Busca en boards LATAM + remotos |
-| `/job-hunter apply` | Revisa los matches y aplica (con human-in-the-loop antes de submit) |
-| `/job-hunter status` | Estado del pipeline: encontrados / aplicados / entrevistas |
-| `/job-hunter dashboard` | Abre panel visual en `localhost:4242` |
-| `/job-hunter research <empresa>` | Investigación profunda antes de aplicar |
-| `/job-hunter letter <url>` | Cover letter para cualquier URL de job |
-| `/job-hunter help` | Lista todos los comandos |
+| Command | What it does |
+|---|---|
+| `/job-hunter setup` | Onboarding wizard, generates your profile |
+| `/job-hunter hunt` | Search LATAM and remote boards |
+| `/job-hunter apply` | Review matches and apply, with a human stop before submit |
+| `/job-hunter status` | Pipeline state: found / applied / interviewing |
+| `/job-hunter research <company>` | Deep research before applying |
+| `/job-hunter letter <url>` | Cover letter for any job URL |
 
----
-
-## Boards que busca
-
-**LATAM (prioridad)**:
-- GetOnBrd, Torre, Workana, Computrabajo (AR/MX/CL/CO/PE), Bumeran (AR/MX/CL)
-- Reddit r/devsArgentina, r/PeruDev, r/mexicodevs (jobs threads)
-
-**Remoto internacional en USD**:
-- Remotive, RemoteOK, We Work Remotely
-- Arc.dev, Lemon.io, Wellfound, Braintrust
-- HN Who's Hiring mensual
-
-**Plataformas freelance / contract**:
-- Upwork, Contra
-- Outlier.ai, Alignerr (gigs de AI training pagados en USD)
-
-**Opcional con sesión activa de Chrome**:
-- LinkedIn (jobs feed + Easy Apply)
-- X/Twitter (búsqueda de hiring posts)
-
-La selección exacta se ajusta a tu profesión y modalidad (remoto / híbrido / presencial) según `profile.json`.
-
----
-
-## Groq key opcional para cover letters más rápidas
-
-Sin key, Claude maneja todo. Con una key gratis de Groq, las cover letters y el scoring corren más rápido:
+Standalone tools:
 
 ```bash
-# workers/.env
-GROQ_API_KEY=tu_key_aca   # gratis en groq.com
+node workers/eval-report.mjs      # delivery rate per channel, orchestrator reliability
+node workers/check-alive.mjs      # opens every pending posting, marks the dead ones
+node dashboard/server2.mjs        # localhost:3000
 ```
 
 ---
 
-## Dashboard opcional
+## Sources
 
-```
-/job-hunter dashboard
-```
+**LATAM**: GetOnBrd, Torre, Workana, Computrabajo, Bumeran
+**Remote in USD**: Remotive, RemoteOK, We Work Remotely, Himalayas, Jobicy, Arc.dev
+**ATS boards**: Greenhouse, Lever, Ashby
+**Other**: HN "Who is hiring" monthly thread, X and Reddit hiring posts
 
-Abre un kanban visual en `localhost:4242` con jobs en estados found / applied / interview y actividad de los agentes.
+Which ones run depends on your profession and work mode, from `profile.json`.
 
----
-
-## Agentes internos
-
-Cada agente es un prompt especializado que Claude corre como subagente:
-
-| Agente | Rol |
-|--------|-----|
-| Fern | Busca en job boards, clasifica oportunidades |
-| Kaguya | Scrapea redes sociales (X, Reddit) para hiring posts |
-| Reigen | Llena formularios ATS y prepara aplicaciones |
-| Erwin | Análisis de mercado — qué priorizar |
-
-Podés renombrar agentes y cambiarles avatar en `dashboard/src/agents.js`.
+Postings go stale. `check-alive.mjs` opens each pending one and records whether it
+still exists: of 219 pending leads, 170 were live and 29 were gone.
 
 ---
 
-## Privacidad
+## Design notes
 
-`profile.json`, `jobs.db` y `.env` están en `.gitignore`. Nada personal se sube al repo.
+**The model never decides what runs.** It classifies; a registry maps that to an
+executor. A model returning a handler name turns a typo into a production failure.
 
----
+**Silence is not consent.** Anything gated on human approval fails closed if the
+human does not answer.
 
-## Requisitos
+**A worker that fails three times gets paused**, not retried forever, and resumes
+on the next clean cycle. One broken integration should not take down the run.
 
-- [Claude Code](https://claude.ai/code) (CLI o app desktop)
-- Node.js 18+
-
-Opcional:
-- [Groq API key](https://console.groq.com) gratis para cover letters más rápidas
-- Playwright MCP en settings de Claude para auto-fill de formularios
-- Chrome con sesiones activas para LinkedIn y scraping de X
+**Costs are measured, not assumed.** A cheap model handles classification, with
+automatic fallback on rate limits.
 
 ---
 
-## Estado
+## Stack
 
-Proyecto activo, en uso personal. Sin promesas de soporte ni roadmap público. Si rompe algo, abrí un issue y miro cuando puedo.
+Node.js · Playwright · Claude API · Groq · SQLite · OpenTelemetry · promptfoo
 
----
-
-## Licencia
-
-MIT
+MIT.
