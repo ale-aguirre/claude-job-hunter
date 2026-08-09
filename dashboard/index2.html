@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -22,8 +22,8 @@
 
   header{display:flex;align-items:flex-end;justify-content:space-between;gap:1rem;
          padding-bottom:.9rem;border-bottom:1px solid var(--line);flex-wrap:wrap}
-  h1{font-size:1.6rem;font-weight:600;margin:0;letter-spacing:-.02em}
-  h1 em{font-style:normal;color:var(--faint);font-weight:400}
+  h1{font-size:1.35rem;font-weight:600;margin:0;letter-spacing:-.03em;
+     font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
   .alerta{font-size:.82rem;color:var(--bad);font-weight:500}
 
   .stats{display:flex;gap:2rem;flex-wrap:wrap;padding:.9rem 0}
@@ -52,7 +52,13 @@
   .cols{display:flex;gap:.75rem;align-items:center;padding:.35rem .6rem;
         border-bottom:1px solid var(--line);font-size:.68rem;color:var(--faint);
         text-transform:uppercase;letter-spacing:.06em}
-  .list{max-height:32rem;overflow-y:auto}
+  .list{max-height:32rem;overflow-y:auto;scrollbar-width:thin;
+        scrollbar-color:var(--line) transparent}
+  .list::-webkit-scrollbar{width:9px}
+  .list::-webkit-scrollbar-track{background:transparent}
+  .list::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px;
+        border:2px solid var(--bg);background-clip:padding-box}
+  .list::-webkit-scrollbar-thumb:hover{background:var(--faint);background-clip:padding-box}
 
   .row{display:flex;gap:.75rem;align-items:center;padding:.42rem .6rem;border-bottom:1px solid var(--line)}
   .row:last-child{border-bottom:none}
@@ -60,11 +66,12 @@
   .c-chk{width:1.1rem;flex-shrink:0}
   .c-co{width:10rem;flex-shrink:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .c-ti{flex:1;min-width:0;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .c-src{width:6rem;flex-shrink:0;font-size:.68rem;color:var(--faint);text-transform:uppercase}
-  .c-est{width:4.8rem;flex-shrink:0;font-size:.73rem;color:var(--dim)}
+  .c-src{width:6.5rem;flex-shrink:0;font-size:.68rem;color:var(--faint);
+         text-transform:uppercase;text-align:center}
+  .c-est{width:5.2rem;flex-shrink:0;font-size:.73rem;color:var(--dim);text-align:center}
   .c-ed{width:4.5rem;flex-shrink:0;font-size:.73rem;color:var(--dim);
-        font-variant-numeric:tabular-nums;text-align:right}
-  .c-lnk{width:3.2rem;flex-shrink:0;text-align:right;font-size:.73rem}
+        font-variant-numeric:tabular-nums;text-align:center}
+  .c-lnk{width:3.5rem;flex-shrink:0;text-align:center;font-size:.73rem}
   .c-act{width:11rem;flex-shrink:0;display:flex;gap:.25rem;justify-content:flex-end}
 
   .row.muerta{opacity:.4}
@@ -90,59 +97,59 @@
 <body>
 <main>
   <header>
-    <h1>job&#8209;hunter <em id="head-sub"></em></h1>
+    <h1>job&#8209;hunter</h1>
     <span class="alerta" id="alerta"></span>
   </header>
   <div class="stats" id="stats"></div>
 
   <details open>
-    <summary><h2>Para aplicar</h2><span class="n" id="n-todo"></span></summary>
+    <summary><h2>To apply</h2><span class="n" id="n-todo"></span></summary>
     <div class="panel">
       <div class="bar">
-        <label><input type="checkbox" id="all"> seleccionar todo</label>
+        <label><input type="checkbox" id="all"> select all</label>
         <span id="sel-n"></span>
         <span class="grow"></span>
-        <button id="b-apliq" disabled>apliqué</button>
-        <button id="b-desc" disabled>descartar</button>
+        <button id="b-apliq" disabled>applied</button>
+        <button id="b-desc" disabled>discard</button>
       </div>
       <div class="cols">
-        <span class="c-chk"></span><span class="c-co">empresa</span><span class="c-ti">puesto</span>
-        <span class="c-src">fuente</span><span class="c-est">estado</span>
-        <span class="c-ed">hallada</span><span class="c-lnk">link</span>
+        <span class="c-chk"></span><span class="c-co">company</span><span class="c-ti">role</span>
+        <span class="c-src">source</span><span class="c-est">status</span>
+        <span class="c-ed">found</span><span class="c-lnk">link</span>
       </div>
       <div class="list" id="todo"></div>
     </div>
   </details>
 
   <details>
-    <summary><h2>Esperando respuesta</h2><span class="n" id="n-esp"></span></summary>
+    <summary><h2>Waiting</h2><span class="n" id="n-esp"></span></summary>
     <div class="panel">
       <div class="cols">
-        <span class="c-co">empresa</span><span class="c-ti">puesto</span>
-        <span class="c-ed">silencio</span><span class="c-lnk">link</span><span class="c-act"></span>
+        <span class="c-co">company</span><span class="c-ti">role</span>
+        <span class="c-ed">silent</span><span class="c-lnk">link</span><span class="c-act"></span>
       </div>
       <div class="list" id="esperando"></div>
     </div>
   </details>
 
   <details id="d-tel" hidden>
-    <summary><h2>Costo y latencia</h2><span class="n" id="tel-sub"></span></summary>
+    <summary><h2>Cost and latency</h2><span class="n" id="tel-sub"></span></summary>
     <div class="panel">
       <div class="cols">
-        <span class="c-co">modelo</span><span class="c-ti">proveedor</span>
-        <span class="c-src">llamadas</span><span class="c-est">latencia</span>
-        <span class="c-ed">tokens</span><span class="c-lnk">costo</span>
+        <span class="c-co">model</span><span class="c-ti">provider</span>
+        <span class="c-src">calls</span><span class="c-est">latency</span>
+        <span class="c-ed">tokens</span><span class="c-lnk">cost</span>
       </div>
       <div class="list" id="tel"></div>
     </div>
   </details>
 
   <details open>
-    <summary><h2>Con respuesta</h2><span class="n" id="n-act"></span></summary>
+    <summary><h2>Answered</h2><span class="n" id="n-act"></span></summary>
     <div class="panel">
       <div class="cols">
-        <span class="c-co">empresa</span><span class="c-ti">puesto</span>
-        <span class="c-ed">estado</span><span class="c-lnk">link</span><span class="c-act"></span>
+        <span class="c-co">company</span><span class="c-ti">role</span>
+        <span class="c-ed">status</span><span class="c-lnk">link</span><span class="c-act"></span>
       </div>
       <div class="list" id="activas"></div>
     </div>
@@ -153,6 +160,7 @@
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 const SIN_CHANCE = /^(openai|anthropic|google|meta|amazon|apple|microsoft|netflix|nvidia|stripe|perplexity|coinbase|databricks|figma)$/i;
+const ESTADO = { viva: 'live', muerta: 'gone', incierta: 'unknown' };
 const silencio = d => d == null ? '' : d > 21 ? 'dead' : d > 10 ? 'stale' : '';
 let data = null;
 
@@ -161,7 +169,7 @@ async function post(url, body) {
   load();
 }
 const cel = (cls, html) => `<span class="${cls}">${html}</span>`;
-const link = u => u ? `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(u)}">abrir</a>` : '';
+const link = u => u ? `<a href="${esc(u)}" target="_blank" rel="noopener" title="${esc(u)}">open</a>` : '';
 
 function filaTodo(r) {
   const d = document.createElement('div');
@@ -170,10 +178,10 @@ function filaTodo(r) {
     cel('c-chk', `<input type="checkbox" data-id="${r.id}">`) +
     cel('c-co', esc(r.company) +
       (r.dias_desde_encontrado <= 2 ? '<span class="badge new">new</span>' : '') +
-      (SIN_CHANCE.test((r.company||'').trim()) ? '<span class="badge nochance">no da</span>' : '')) +
+      (SIN_CHANCE.test((r.company||'').trim()) ? '<span class="badge nochance">no fit</span>' : '')) +
     cel('c-ti', esc(r.title)) +
     cel('c-src', esc(r.source || '')) +
-    cel('c-est', `<span class="dot ${esc(r.alive||'incierta')}"></span>${esc(r.alive || 'sin ver')}`) +
+    cel('c-est', `<span class="dot ${esc(r.alive||'incierta')}"></span>${ESTADO[r.alive] || 'unchecked'}`) +
     cel('c-ed', `${r.dias_desde_encontrado}d`) +
     cel('c-lnk', link(r.url));
   return d;
@@ -206,32 +214,30 @@ const sel = () => [...document.querySelectorAll('#todo input:checked')].map(c =>
 
 function sync() {
   const n = sel().length;
-  $('sel-n').textContent = n ? `${n} seleccionadas` : '';
+  $('sel-n').textContent = n ? `${n} selected` : '';
   $('b-apliq').disabled = $('b-desc').disabled = n === 0;
 }
 
 async function load() {
   data = await (await fetch('/api/data')).json();
   const s = data.resumen;
-
-  $('head-sub').textContent = s.dias_sin_aplicar != null ? `· ${s.dias_sin_aplicar} días sin aplicar` : '';
   $('alerta').textContent = s.dias_desde_scout > 3
-    ? `el scout no corre hace ${s.dias_desde_scout} días` : '';
+    ? `scout has not run in ${s.dias_desde_scout} days` : '';
 
   $('stats').innerHTML = [
-    ['nuevas','nuevas hoy',false], ['vivas','vivas',false], ['para_aplicar','pendientes',false],
-    ['enviadas','enviadas',false], ['con_respuesta','con respuesta', s.con_respuesta === 0],
+    ['nuevas','new today',false], ['vivas','live',false], ['para_aplicar','pending',false],
+    ['enviadas','sent',false], ['con_respuesta','answered', s.con_respuesta === 0],
   ].map(([k,l,a]) => `<div class="stat${a?' alert':''}"><b>${s[k] ?? 0}</b><span>${l}</span></div>`).join('');
 
   $('n-todo').textContent = data.todo.length;
-  pintar('todo', data.todo.map(filaTodo), 'Nada pendiente.');
+  pintar('todo', data.todo.map(filaTodo), 'Nothing pending.');
   document.querySelectorAll('#todo input').forEach(c => c.onchange = sync);
   $('all').checked = false; sync();
 
   $('n-esp').textContent = data.esperando.length;
   pintar('esperando', data.esperando.map(r => filaSimple(r,
     `<span class="${silencio(r.dias_sin_respuesta)}">${r.dias_sin_respuesta}d</span>`,
-    [['respondió','respondio'], ['rechazo','rechazado']])), 'Nada esperando.');
+    [['answered','respondio'], ['rejected','rechazado']])), 'Nothing waiting.');
 
   const tl = data.telemetria;
   if (tl && tl.total?.llamadas) {
@@ -245,13 +251,13 @@ async function load() {
                     cel('c-ed', `${(m.tok_in||0) + (m.tok_out||0)}`) +
                     cel('c-lnk', m.costo != null ? `$${m.costo}` : '—');
       return d;
-    }), 'Sin datos.');
+    }), 'No data yet.');
   }
 
   $('n-act').textContent = data.activas.length;
   pintar('activas', data.activas.map(r => filaSimple(r,
-    `<span class="outcome ${esc(r.outcome)}">${esc(r.outcome || 'respondió')}</span>`,
-    [['entrevista','entrevista'], ['oferta','oferta'], ['rechazo','rechazado']])), 'Nadie respondió.');
+    `<span class="outcome ${esc(r.outcome)}">${esc(r.outcome || 'answered')}</span>`,
+    [['interview','entrevista'], ['offer','oferta'], ['rejected','rechazado']])), 'Nobody answered.');
 }
 
 $('all').onchange = e => {
