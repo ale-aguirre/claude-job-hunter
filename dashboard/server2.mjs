@@ -173,4 +173,5 @@ const server = createServer((req, res) => {
   res.writeHead(404).end('not found');
 });
 
-server.listen(PORT, () => console.log(`\njob-hunter en http://localhost:${PORT}\n`));
+// 127.0.0.1: el dashboard muestra tu búsqueda laboral entera — nadie de la LAN tiene por qué verla.
+server.listen(PORT, '127.0.0.1', () => console.log(`\njob-hunter en http://localhost:${PORT}\n`));
