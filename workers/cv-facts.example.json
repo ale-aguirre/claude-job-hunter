@@ -1,0 +1,126 @@
+{
+  "_comment": "Example fact file with a fictional candidate. Copy to cv-facts.json and replace with your own. Every claim the LLM is allowed to make about you lives here — if it is not in this file, the validator drops it.",
+  "identity": {
+    "name": "Jane Example",
+    "email": "jane@example.com",
+    "location": "Lisbon, Portugal (UTC+0)",
+    "linkedin": "linkedin.com/in/jane-example",
+    "github": "github.com/jane-example",
+    "portfolio": "jane-example.dev"
+  },
+  "headlines": {
+    "ai": {
+      "en": "AI Engineer — LLM pipelines & agents",
+      "es": "AI Engineer — pipelines LLM y agentes"
+    },
+    "fullstack": {
+      "en": "Full Stack Developer — TypeScript / Node",
+      "es": "Full Stack Developer — TypeScript / Node"
+    },
+    "frontend": {
+      "en": "Frontend Developer — React / TypeScript",
+      "es": "Frontend Developer — React / TypeScript"
+    }
+  },
+  "summary_base": {
+    "en": "Developer with 4 years of experience building web products, now focused on LLM-powered tools. Comfortable owning a feature end to end, from design to deploy.",
+    "es": "Desarrolladora con 4 años de experiencia construyendo productos web, hoy enfocada en herramientas con LLMs. Cómoda llevando una feature de punta a punta, del diseño al deploy."
+  },
+  "skills": [
+    { "id": "sk_ts", "label": "TypeScript", "category": "core" },
+    { "id": "sk_react", "label": "React", "category": "core" },
+    { "id": "sk_node", "label": "Node.js", "category": "core" },
+    { "id": "sk_css", "label": "CSS / Tailwind", "category": "frontend" },
+    { "id": "sk_testing", "label": "Vitest / Playwright", "category": "tooling" },
+    { "id": "sk_git", "label": "Git / CI", "category": "tooling" },
+    { "id": "sk_sql", "label": "PostgreSQL / SQLite", "category": "secondary" },
+    { "id": "sk_python", "label": "Python (scripting)", "category": "secondary" },
+    { "id": "sk_llm_api", "label": "LLM APIs (Claude, OpenAI)", "category": "ai" },
+    { "id": "sk_prompting", "label": "Prompt design & structured output", "category": "ai" },
+    { "id": "sk_agents", "label": "Agent orchestration", "category": "ai" },
+    { "id": "sk_evals", "label": "Evals (promptfoo)", "category": "ai" }
+  ],
+  "experience": [
+    {
+      "id": "acme",
+      "company": "Acme Web Studio",
+      "role": {
+        "en": "Frontend Developer",
+        "es": "Frontend Developer"
+      },
+      "period": "2022 — present",
+      "context": {
+        "en": "Agency building marketing sites and internal tools for retail clients.",
+        "es": "Agencia que construye sitios de marketing y herramientas internas para clientes retail."
+      },
+      "bullets": [
+        {
+          "id": "acme1",
+          "en": "Built and shipped 20+ client sites on React and Next.js, owning them from brief to production.",
+          "es": "Construyó y publicó 20+ sitios de clientes en React y Next.js, a cargo desde el brief hasta producción.",
+          "tags": ["react", "next", "frontend", "delivery"]
+        },
+        {
+          "id": "acme2",
+          "en": "Introduced an LLM-assisted content pipeline that cut copy turnaround from days to hours.",
+          "es": "Introdujo un pipeline de contenido asistido por LLM que bajó el tiempo de copy de días a horas.",
+          "tags": ["llm", "automation", "pipeline"]
+        },
+        {
+          "id": "acme3",
+          "en": "Set up Playwright end-to-end tests that now gate every deploy.",
+          "es": "Configuró tests end-to-end con Playwright que hoy bloquean cada deploy.",
+          "tags": ["testing", "playwright", "ci"]
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "mailsort",
+      "name": "MailSort",
+      "subtitle": {
+        "en": "LLM agent that triages a shared inbox",
+        "es": "Agente LLM que clasifica una casilla compartida"
+      },
+      "stack": "Node.js, Claude API, SQLite",
+      "link": "github.com/jane-example/mailsort",
+      "bullets": [
+        {
+          "id": "mailsort1",
+          "en": "Classifies 200+ emails a day into queues; every label is validated against a fixed rule set before it is applied.",
+          "es": "Clasifica 200+ mails por día en colas; cada etiqueta se valida contra un set fijo de reglas antes de aplicarse.",
+          "tags": ["agents", "llm", "validation"]
+        },
+        {
+          "id": "mailsort2",
+          "en": "promptfoo eval suite catches misrouted categories before a model or prompt change ships.",
+          "es": "Suite de evals con promptfoo detecta categorías mal ruteadas antes de subir un cambio de modelo o prompt.",
+          "tags": ["evals", "promptfoo", "quality"]
+        }
+      ]
+    },
+    {
+      "id": "shoplens",
+      "name": "ShopLens",
+      "subtitle": {
+        "en": "Product photo pipeline for a small e-commerce",
+        "es": "Pipeline de fotos de producto para un e-commerce chico"
+      },
+      "stack": "Next.js, PostgreSQL, OpenAI vision",
+      "link": "github.com/jane-example/shoplens",
+      "bullets": [
+        {
+          "id": "shoplens1",
+          "en": "Vision model drafts product descriptions from photos; a human approves every one before publish.",
+          "es": "Un modelo de visión borradorea descripciones desde fotos; una persona aprueba cada una antes de publicar.",
+          "tags": ["vision", "human-in-the-loop", "ecommerce"]
+        }
+      ]
+    }
+  ],
+  "education": {
+    "en": "Self-taught. Currently studying systems engineering (2nd year).",
+    "es": "Autodidacta. Actualmente cursando ingeniería en sistemas (2° año)."
+  }
+}

@@ -109,6 +109,16 @@ Then, in Claude Code:
 
 The wizard asks six questions and writes `profile.json`.
 
+The CV tailor and the eval suite read `workers/cv-facts.json` (your facts — gitignored).
+Without it they fall back to `workers/cv-facts.example.json`, a fictional candidate, so a
+fresh clone can run the tailor and the evals out of the box:
+
+```bash
+cd workers && npx promptfoo eval -c evals/promptfooconfig.yaml
+```
+
+To use your own facts: `cp cv-facts.example.json cv-facts.json` and edit it.
+
 ---
 
 ## Commands

@@ -19,15 +19,26 @@ const require = createRequire(import.meta.url);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ── Rutas ────────────────────────────────────────────────────────────────────
-const FACTS_PATH = join(__dirname, 'cv-facts.json');
+const FACTS_PATH   = join(__dirname, 'cv-facts.json');
+const EXAMPLE_PATH = join(__dirname, 'cv-facts.example.json');
 const CV_OUT_DIR = join(__dirname, 'cv-out');
 
 // ── Cargar hechos (una vez en memoria) ───────────────────────────────────────
 let _facts = null;
 export function getFacts() {
   if (!_facts) {
-    if (!existsSync(FACTS_PATH)) throw new Error('[cv-tailor] cv-facts.json not found');
-    _facts = JSON.parse(readFileSync(FACTS_PATH, 'utf8'));
+    if (existsSync(FACTS_PATH)) {
+      _facts = JSON.parse(readFileSync(FACTS_PATH, 'utf8'));
+    } else if (existsSync(EXAMPLE_PATH)) {
+      // Fresh clone: cv-facts.json is personal and gitignored. Fall back to the
+      // bundled example (a fictional candidate) so the tailor and the eval
+      // suite can run out of the box — loudly, so nobody ships a CV for Jane.
+      console.warn('[cv-tailor] cv-facts.json not found — using cv-facts.example.json (FICTIONAL data).');
+      console.warn('[cv-tailor] Copy cv-facts.example.json to cv-facts.json and edit it with your own facts.');
+      _facts = JSON.parse(readFileSync(EXAMPLE_PATH, 'utf8'));
+    } else {
+      throw new Error('[cv-tailor] cv-facts.json not found');
+    }
   }
   return _facts;
 }
