@@ -10,6 +10,7 @@
 // override:true fuerza los valores del .env sobre vars del shell (ej: .zshrc setea ANTHROPIC_API_KEY="" para OpenClaw)
 import dotenv from 'dotenv';
 dotenv.config({ override: true });
+import { spanLLM } from './telemetry.mjs';
 
 const ANTHROPIC_KEY  = process.env.ANTHROPIC_API_KEY || '';
 const GROQ_KEY       = process.env.GROQ_API_KEY       || '';
@@ -24,6 +25,7 @@ const OLLAMA_BASE    = process.env.OLLAMA_BASE  || 'http://localhost:11434';
 
 // ── Anthropic Sonnet (orchestration primary) ─────────────────────────────────
 async function callAnthropicRaw(system, user, maxTokens = 2000) {
+  return spanLLM({ provider: 'anthropic', model: SONNET_MODEL }, async () => {
   const r = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -41,11 +43,17 @@ async function callAnthropicRaw(system, user, maxTokens = 2000) {
   });
   if (!r.ok) throw new Error(`Anthropic ${r.status}: ${(await r.text()).slice(0, 100)}`);
   const d = await r.json();
-  return d.content?.[0]?.text || '';
+  return {
+    text: d.content?.[0]?.text || '',
+    model: d.model,
+    usage: { input: d.usage?.input_tokens, output: d.usage?.output_tokens },
+  };
+  }).then(r => r.text);
 }
 
 // ── Groq llama-3.3-70b (simple tasks primary / smart fallback) ───────────────
 async function callGroqRaw(system, user, maxTokens = 1500) {
+  return spanLLM({ provider: 'groq', model: GROQ_MODEL }, async () => {
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
@@ -70,11 +78,17 @@ async function callGroqRaw(system, user, maxTokens = 1500) {
   if (!choice?.message?.content && choice?.finish_reason === 'length') {
     throw new Error(`Groq: reply truncated before any content (max_tokens=${maxTokens})`);
   }
-  return choice?.message?.content || '';
+  return {
+    text: choice?.message?.content || '',
+    model: d.model,
+    usage: { input: d.usage?.prompt_tokens, output: d.usage?.completion_tokens },
+  };
+  }).then(r => r.text);
 }
 
 // ── Ollama local (last resort) ───────────────────────────────────────────────
 async function callOllamaRaw(system, user) {
+  return spanLLM({ provider: 'ollama', model: OLLAMA_MODEL }, async () => {
   const r = await fetch(`${OLLAMA_BASE}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -90,7 +104,12 @@ async function callOllamaRaw(system, user) {
   });
   if (!r.ok) throw new Error(`Ollama ${r.status}`);
   const d = await r.json();
-  return d.message?.content || '';
+  return {
+    text: d.message?.content || '',
+    model: d.model,
+    usage: { input: d.prompt_eval_count, output: d.eval_count },
+  };
+  }).then(r => r.text);
 }
 
 // ── callSmart — Sonnet para razonamiento y orquestación ──────────────────────

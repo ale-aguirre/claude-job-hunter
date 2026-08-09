@@ -18,6 +18,10 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/resources": "^2.10.0",
+    "@opentelemetry/sdk-trace-node": "^2.10.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "better-sqlite3": "^12.6.2",
     "chrome-cookies-secure": "^3.0.1",
     "dotenv": "^17.3.1",

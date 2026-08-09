@@ -12,6 +12,7 @@ import { readFileSync, existsSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { callFast } from './anthropic-client.mjs';
+import { spanTask } from './telemetry.mjs';
 import { detectRole, detectLang } from './templates.mjs';
 
 const require = createRequire(import.meta.url);
@@ -349,6 +350,13 @@ function slugify(str) {
  * @returns {{ path: string, role: string, lang: string } | null}
  */
 export async function tailorCV(job) {
+  return spanTask('tailor_cv', {
+    'job.company': job?.company,
+    'job.title': job?.title,
+  }, () => _tailorCV(job));
+}
+
+async function _tailorCV(job) {
   let lastError = null;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
