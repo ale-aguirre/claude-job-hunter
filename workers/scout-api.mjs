@@ -12,12 +12,13 @@
  */
 import 'dotenv/config';
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 import { getProfileKeywords } from './profile-extractor.mjs';
 
 const require  = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
 
-const db       = new Database(new URL('applications.db', import.meta.url).pathname);
+const db       = new Database(fileURLToPath(new URL('applications.db', import.meta.url)));
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
 
 // ─── Job preferences from .env ─────────────────────────────────────────────

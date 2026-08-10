@@ -2,6 +2,7 @@
  * db-utils.mjs — Shared DB helpers: logging, upsert, status updates
  */
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
 

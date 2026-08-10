@@ -25,6 +25,9 @@
   h1{font-size:1.35rem;font-weight:600;margin:0;letter-spacing:-.03em;
      font-family:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace}
   .alerta{font-size:.82rem;color:var(--bad);font-weight:500}
+  header .grow{flex:1}
+  .ghost{background:none;border:1px solid var(--line);color:var(--dim)}
+  .ghost[aria-pressed="true"]{color:var(--fg);border-color:var(--dim)}
 
   .stats{display:flex;gap:2rem;flex-wrap:wrap;padding:.9rem 0}
   .stat b{display:block;font-size:1.3rem;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
@@ -99,6 +102,8 @@
   <header>
     <h1>job&#8209;hunter</h1>
     <span class="alerta" id="alerta"></span>
+    <span class="grow"></span>
+    <button id="b-tel" class="ghost" hidden>costs</button>
   </header>
   <div class="stats" id="stats"></div>
 
@@ -239,9 +244,10 @@ async function load() {
     `<span class="${silencio(r.dias_sin_respuesta)}">${r.dias_sin_respuesta}d</span>`,
     [['answered','respondio'], ['rejected','rechazado']])), 'Nothing waiting.');
 
+  // Costs live behind the header button, not in the application flow.
   const tl = data.telemetria;
   if (tl && tl.total?.llamadas) {
-    $('d-tel').hidden = false;
+    $('b-tel').hidden = false;
     $('tel-sub').textContent = `${tl.total.llamadas} llamadas · $${tl.total.costo ?? 0} · ${tl.total.ms_prom}ms prom`;
     pintar('tel', tl.por_modelo.map(m => {
       const d = document.createElement('div');
@@ -263,6 +269,12 @@ async function load() {
 $('all').onchange = e => {
   document.querySelectorAll('#todo input').forEach(c => { c.checked = e.target.checked; });
   sync();
+};
+$('b-tel').onclick = () => {
+  const d = $('d-tel');
+  d.hidden = !d.hidden;
+  d.open = !d.hidden;
+  $('b-tel').setAttribute('aria-pressed', String(!d.hidden));
 };
 $('b-desc').onclick = () => post('/api/bulk', { ids: sel(), accion: 'descartar' });
 $('b-apliq').onclick = () => post('/api/bulk', { ids: sel(), accion: 'aplique' });

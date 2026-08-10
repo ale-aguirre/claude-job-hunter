@@ -12,10 +12,11 @@
  * Fallback chain: Groq → APPLY_KEYWORDS in .env → generic terms
  */
 import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { fileURLToPath } from 'url';
 import { getCVText } from './cv-reader.mjs';
 import 'dotenv/config';
 
-const CACHE_PATH = new URL('.profile-keywords.json', import.meta.url).pathname;
+const CACHE_PATH = fileURLToPath(new URL('.profile-keywords.json', import.meta.url));
 const CACHE_TTL  = 24 * 60 * 60 * 1000; // 24 hours
 const GROQ_KEY   = process.env.GROQ_API_KEY       || '';
 const OR_KEY     = process.env.OPENROUTER_API_KEY  || '';
