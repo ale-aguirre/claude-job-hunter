@@ -163,7 +163,8 @@ function upsertJob(company, title, url, platform, notes, postedAt = null) {
     if (ex.status !== 'applied') updateStmt.run(notes, url);
     return false;
   }
-  insertStmt.run(company, title, url, 'API', 'found', notes, platform, postedAt);
+  // source = el board concreto. 'API' a secas escondía de dónde salió cada lead.
+  insertStmt.run(company, title, url, platform || 'API', 'found', notes, platform, postedAt);
   return true;
 }
 
@@ -362,7 +363,11 @@ async function scrapeHimalayas() {
     for (const item of items.slice(0, 30)) {
       const title   = item.match(/<title><!\[CDATA\[(.*?)\]\]>/)?.[1] || item.match(/<title>(.*?)<\/title>/)?.[1] || '';
       const link    = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
-      const company = item.match(/<author>(.*?)<\/author>/)?.[1] || 'Unknown';
+      // El RSS de Himalayas no trae <author>, pero la empresa está en el slug
+      // de la URL: himalayas.app/companies/<empresa>/jobs/...
+      const slug = link.match(/himalayas\.app\/companies\/([^/]+)/)?.[1] || '';
+      const company = item.match(/<author>(.*?)<\/author>/)?.[1]
+        || (slug ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Unknown');
       const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || null;
       const postedAt = pubDate ? new Date(pubDate).toISOString() : null;
       if (!isRelevant(title, [])) continue;
@@ -868,7 +873,11 @@ const results = await Promise.allSettled([
 
 // Sequential sources (rate-limited or heavier)
 const hnCount   = await scrapeHNWhoIsHiring();
-const groqCount = await scrapeViaGroq();
+// scrapeViaGroq deshabilitado: le pedía ofertas a un LLM, que es exactamente el
+// anti-patrón que este proyecto critica — el modelo inventaba empresas y URLs
+// plausibles. 40 filas basura en la base salieron de acá. Un fetcher es código
+// contra una API, no una pregunta a un modelo.
+const groqCount = 0;
 
 const total = results.reduce((s, r) => s + (r.value || 0), 0) + hnCount + groqCount;
 console.log(`\n✅ scout-api done: +${total} new jobs`);

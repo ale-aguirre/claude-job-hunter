@@ -33,20 +33,23 @@
      transition:border-color .15s, width .2s ease}
   #q:focus{outline:none;border-color:var(--dim);width:16rem}
 
-  /* Micro-motion. Nada de librerías: el dashboard es HTML plano y con CSS
-     alcanza. Todo se apaga si el sistema pide menos movimiento. */
-  .row{animation:fadeUp .22s ease both}
-  @keyframes fadeUp{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
-  .row:nth-child(1){animation-delay:.02s}.row:nth-child(2){animation-delay:.04s}
-  .row:nth-child(3){animation-delay:.06s}.row:nth-child(4){animation-delay:.08s}
-  .row:nth-child(5){animation-delay:.10s}
-  .row{transition:background .12s}
-  button{transition:background .12s, border-color .12s, color .12s}
-  .stat b{transition:color .2s}
-  details .panel{animation:fadeUp .18s ease both}
+  /* Motion. Nada de librerías: HTML plano + CSS + WAAPI para lo que CSS no
+     llega (colapso de filas al filtrar, apertura de paneles). Todo se apaga
+     con prefers-reduced-motion. */
+  .row{animation:fadeUp .3s cubic-bezier(.22,.61,.36,1) both;transition:background .15s}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .row:nth-child(1){animation-delay:.03s}.row:nth-child(2){animation-delay:.06s}
+  .row:nth-child(3){animation-delay:.09s}.row:nth-child(4){animation-delay:.12s}
+  .row:nth-child(5){animation-delay:.15s}.row:nth-child(6){animation-delay:.18s}
+  .row:nth-child(7){animation-delay:.21s}.row:nth-child(8){animation-delay:.24s}
+  button{transition:background .15s, border-color .15s, color .15s, transform .1s}
+  button:not(:disabled):active{transform:scale(.96)}
+  .stat b{transition:color .25s}
+  .list{scroll-behavior:smooth}
+  summary::before{transition:transform .25s cubic-bezier(.22,.61,.36,1)}
   @media (prefers-reduced-motion: reduce){
-    .row, details .panel{animation:none}
-    #q{transition:none}
+    *{animation-duration:.01ms !important;transition-duration:.01ms !important}
+    .list{scroll-behavior:auto}
   }
 
   .stats{display:flex;gap:2rem;flex-wrap:wrap;padding:.9rem 0}
@@ -294,15 +297,44 @@ $('all').onchange = e => {
   sync();
 };
 // Buscador: filtra por texto visible (empresa, rol, fecha) en las tres listas.
+// Las filas colapsan y reaparecen animadas vía WAAPI; display:none no transiciona.
+const QUIETO = matchMedia('(prefers-reduced-motion: reduce)').matches;
+function verFila(row, mostrar) {
+  if (row.dataset.vis !== 'off' && mostrar) return;
+  if (row.dataset.vis === 'off' && !mostrar) return;
+  row.dataset.vis = mostrar ? 'on' : 'off';
+  if (QUIETO) { row.style.display = mostrar ? '' : 'none'; return; }
+  row.style.overflow = 'hidden';
+  const alto = { opacity: 1, height: row.scrollHeight + 'px', paddingTop: '', paddingBottom: '' };
+  const nada = { opacity: 0, height: '0px', paddingTop: '0px', paddingBottom: '0px' };
+  if (mostrar) {
+    row.style.display = '';
+    row.animate([nada, alto], { duration: 200, easing: 'cubic-bezier(.22,.61,.36,1)' });
+  } else {
+    row.animate([alto, nada], { duration: 180, easing: 'ease-out' })
+      .onfinish = () => { if (row.dataset.vis === 'off') row.style.display = 'none'; };
+  }
+}
 $('q').oninput = () => {
   const t = $('q').value.trim().toLowerCase();
   for (const row of document.querySelectorAll('.list .row')) {
     const hay = row.textContent.toLowerCase() + ' ' + (row.dataset.fecha || '');
-    row.style.display = !t || hay.includes(t) ? '' : 'none';
+    verFila(row, !t || hay.includes(t));
   }
   // abrir las secciones cuando hay búsqueda activa, para ver los resultados
   if (t) for (const d of document.querySelectorAll('details:not(#d-tel)')) d.open = true;
 };
+
+// Apertura suave de cada sección: el panel se despliega en vez de aparecer.
+for (const det of document.querySelectorAll('details')) {
+  det.addEventListener('toggle', () => {
+    if (!det.open || QUIETO) return;
+    const panel = det.querySelector('.panel');
+    if (panel) panel.animate(
+      [{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }],
+      { duration: 220, easing: 'cubic-bezier(.22,.61,.36,1)' });
+  });
+}
 $('b-tel').onclick = () => {
   const d = $('d-tel');
   d.hidden = !d.hidden;
