@@ -28,6 +28,26 @@
   header .grow{flex:1}
   .ghost{background:none;border:1px solid var(--line);color:var(--dim)}
   .ghost[aria-pressed="true"]{color:var(--fg);border-color:var(--dim)}
+  #q{font:inherit;font-size:.78rem;padding:.25rem .6rem;border:1px solid var(--line);
+     border-radius:4px;background:none;color:var(--fg);width:13rem;
+     transition:border-color .15s, width .2s ease}
+  #q:focus{outline:none;border-color:var(--dim);width:16rem}
+
+  /* Micro-motion. Nada de librerías: el dashboard es HTML plano y con CSS
+     alcanza. Todo se apaga si el sistema pide menos movimiento. */
+  .row{animation:fadeUp .22s ease both}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  .row:nth-child(1){animation-delay:.02s}.row:nth-child(2){animation-delay:.04s}
+  .row:nth-child(3){animation-delay:.06s}.row:nth-child(4){animation-delay:.08s}
+  .row:nth-child(5){animation-delay:.10s}
+  .row{transition:background .12s}
+  button{transition:background .12s, border-color .12s, color .12s}
+  .stat b{transition:color .2s}
+  details .panel{animation:fadeUp .18s ease both}
+  @media (prefers-reduced-motion: reduce){
+    .row, details .panel{animation:none}
+    #q{transition:none}
+  }
 
   .stats{display:flex;gap:2rem;flex-wrap:wrap;padding:.9rem 0}
   .stat b{display:block;font-size:1.3rem;font-weight:600;line-height:1.2;font-variant-numeric:tabular-nums}
@@ -103,6 +123,7 @@
     <h1>job&#8209;hunter</h1>
     <span class="alerta" id="alerta"></span>
     <span class="grow"></span>
+    <input id="q" type="search" placeholder="company, role or date" autocomplete="off">
     <button id="b-tel" class="ghost" hidden>costs</button>
   </header>
   <div class="stats" id="stats"></div>
@@ -195,6 +216,8 @@ function filaTodo(r) {
 function filaSimple(r, meta, acciones) {
   const d = document.createElement('div');
   d.className = 'row';
+  // la fecha de envío viaja en el dataset para que el buscador matchee "2026-08"
+  if (r.sent_at) { d.dataset.fecha = r.sent_at.slice(0, 10); d.title = `sent ${r.sent_at.slice(0, 10)}`; }
   d.innerHTML = cel('c-co', esc(r.company)) + cel('c-ti', esc(r.title)) +
                 cel('c-ed', meta) + cel('c-lnk', link(r.url));
   const acts = document.createElement('span');
@@ -269,6 +292,16 @@ async function load() {
 $('all').onchange = e => {
   document.querySelectorAll('#todo input').forEach(c => { c.checked = e.target.checked; });
   sync();
+};
+// Buscador: filtra por texto visible (empresa, rol, fecha) en las tres listas.
+$('q').oninput = () => {
+  const t = $('q').value.trim().toLowerCase();
+  for (const row of document.querySelectorAll('.list .row')) {
+    const hay = row.textContent.toLowerCase() + ' ' + (row.dataset.fecha || '');
+    row.style.display = !t || hay.includes(t) ? '' : 'none';
+  }
+  // abrir las secciones cuando hay búsqueda activa, para ver los resultados
+  if (t) for (const d of document.querySelectorAll('details:not(#d-tel)')) d.open = true;
 };
 $('b-tel').onclick = () => {
   const d = $('d-tel');

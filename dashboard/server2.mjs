@@ -98,6 +98,7 @@ const queries = {
       enviadas: g("SELECT COUNT(*) n FROM applications WHERE status='applied'").n,
       esperando: g("SELECT COUNT(*) n FROM applications WHERE status='applied' AND replied_at IS NULL AND outcome=''").n,
       con_respuesta: g("SELECT COUNT(*) n FROM applications WHERE replied_at IS NOT NULL").n,
+      vencidas: g("SELECT COUNT(*) n FROM applications WHERE outcome='timeout'").n,
       ultima_enviada: g("SELECT MAX(sent_at) d FROM applications").d,
       dias_sin_aplicar: g(`SELECT ${DAYS.replace('%s', 'MAX(sent_at)')} n FROM applications`).n,
     };
@@ -113,6 +114,14 @@ const server = createServer((req, res) => {
   }
 
   if (u.pathname === '/api/data') {
+    // 30 días de silencio = descartada por tiempo. Se archiva sola: seguir
+    // mostrándola como "waiting" es mentirse.
+    db.prepare(`
+      UPDATE applications SET status='archived', outcome='timeout',
+             updated_at = datetime('now')
+      WHERE status='applied' AND replied_at IS NULL AND outcome=''
+        AND julianday('now') - julianday(sent_at) > 30
+    `).run();
     return json(res, {
       resumen: queries.resumen(),
       telemetria: queries.telemetria(),
