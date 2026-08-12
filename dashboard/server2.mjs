@@ -38,7 +38,13 @@ const queries = {
   todo: () => db.prepare(`
     SELECT id, company, title, url, source, score, location, salary, alive,
            ${DAYS.replace('%s', 'applied_at')} AS dias_desde_encontrado,
-           email_contact
+           email_contact,
+           CASE
+             WHEN url LIKE '%ashbyhq.com%' OR url LIKE '%lever.co%'
+               OR url LIKE '%greenhouse.io%' OR url LIKE '%workable.com%' THEN 'auto'
+             WHEN email_contact IS NOT NULL AND email_contact != '' THEN 'semi'
+             ELSE 'manual'
+           END AS balde
     FROM applications
     WHERE status = 'found'
     ORDER BY CASE alive WHEN 'viva' THEN 0 WHEN 'incierta' THEN 1 ELSE 2 END,

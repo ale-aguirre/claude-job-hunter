@@ -32,7 +32,18 @@ export default class CvTailorProvider {
     const job = { title: vars.title || '', notes: prompt };
 
     try {
-      const raw = await callTailorLLM(facts, job, role, lang);
+      // Groq free tier rate-limits under eval concurrency; a 429 is not a
+      // finding about the CV pipeline, so retry with backoff before failing.
+      let raw, lastErr;
+      for (let intento = 0; intento < 3; intento++) {
+        try { raw = await callTailorLLM(facts, job, role, lang); break; }
+        catch (e) {
+          lastErr = e;
+          if (!/429|rate.?limit|overloaded|JSON/i.test(e.message)) throw e;
+          await new Promise(r => setTimeout(r, 15000 * (intento + 1)));
+        }
+      }
+      if (!raw) throw lastErr;
       // Keep a copy: validate() mutates the selection in place, and the whole
       // point of the eval is to see what the model produced before repair.
       const before = JSON.parse(JSON.stringify(raw));

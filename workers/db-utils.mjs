@@ -8,7 +8,7 @@ const Database = require('better-sqlite3');
 
 export function openDB() {
   const dbPath = process.env.HUNTDESK_DB_PATH
-    || new URL('applications.db', import.meta.url).pathname;
+    || fileURLToPath(new URL('applications.db', import.meta.url));
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');

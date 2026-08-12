@@ -105,6 +105,12 @@
   .badge{font-size:.62rem;padding:.03rem .3rem;border-radius:3px;margin-left:.35rem;
          text-transform:uppercase;letter-spacing:.05em;vertical-align:middle}
   .badge.new{background:var(--ok);color:var(--bg);font-weight:600}
+  .badge.b-auto{background:#1f6fb2;color:#fff}
+  .badge.b-semi{background:#7a5af5;color:#fff}
+  .badge.b-manual{background:none;border:1px solid var(--line);color:var(--dim)}
+  .chips{display:flex;gap:4px}
+  .chip{background:none;border:1px solid var(--line);color:var(--dim);border-radius:20px;padding:.1rem .55rem}
+  .chip.on{color:var(--fg);border-color:var(--fg)}
   .badge.nochance{color:var(--warn);border:1px solid var(--warn)}
   .dot{display:inline-block;width:5px;height:5px;border-radius:50%;margin-right:.35rem}
   .dot.viva{background:var(--ok)} .dot.muerta{background:var(--bad)} .dot.incierta{background:var(--faint)}
@@ -138,6 +144,9 @@
         <label><input type="checkbox" id="all"> select all</label>
         <span id="sel-n"></span>
         <span class="grow"></span>
+        <span class="chips" id="baldes">
+          <button class="chip on" data-b="">all</button><button class="chip" data-b="auto">auto-apply</button><button class="chip" data-b="semi">email</button><button class="chip" data-b="manual">manual</button>
+        </span>
         <button id="b-apliq" disabled>applied</button>
         <button id="b-desc" disabled>discard</button>
       </div>
@@ -203,9 +212,11 @@ const link = u => u ? `<a href="${esc(u)}" target="_blank" rel="noopener" title=
 function filaTodo(r) {
   const d = document.createElement('div');
   d.className = 'row' + (r.alive === 'muerta' ? ' muerta' : '');
+  d.dataset.balde = r.balde || 'manual';
   d.innerHTML =
     cel('c-chk', `<input type="checkbox" data-id="${r.id}">`) +
     cel('c-co', esc(r.company) +
+      `<span class="badge b-${esc(r.balde)}">${{auto:'auto',semi:'email',manual:'manual'}[r.balde]||''}</span>` +
       (r.dias_desde_encontrado <= 2 ? '<span class="badge new">new</span>' : '') +
       (SIN_CHANCE.test((r.company||'').trim()) ? '<span class="badge nochance">no fit</span>' : '')) +
     cel('c-ti', esc(r.title)) +
@@ -242,6 +253,17 @@ function pintar(el, filas, vacio) {
 }
 
 const sel = () => [...document.querySelectorAll('#todo input:checked')].map(c => +c.dataset.id);
+
+// Filtro por balde: auto (el applier puede solo), email (hay contacto), manual (LinkedIn etc.)
+let baldeActivo = '';
+document.getElementById('baldes').onclick = e => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  baldeActivo = b.dataset.b;
+  for (const c of document.querySelectorAll('#baldes .chip')) c.classList.toggle('on', c === b);
+  for (const row of document.querySelectorAll('#todo .row'))
+    verFila ? verFila(row, !baldeActivo || row.dataset.balde === baldeActivo)
+            : (row.style.display = !baldeActivo || row.dataset.balde === baldeActivo ? '' : 'none');
+};
 
 function sync() {
   const n = sel().length;

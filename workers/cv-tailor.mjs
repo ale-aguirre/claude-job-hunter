@@ -138,7 +138,17 @@ export function validate(selection, facts, lang) {
     errors.push(`invalid headline_role: ${selection.headline_role}`);
   }
 
-  // skill_ids_ordered
+  // skill_ids_ordered — el modelo a veces devuelve la lista entera; el layout
+  // de una página banca 10 skills y 3 proyectos, así que el sistema recorta
+  // aunque el modelo desborde (el modelo puede fallar; el sistema contiene).
+  if ((selection.skill_ids_ordered || []).length > 10) {
+    errors.push(`too many skills (${selection.skill_ids_ordered.length}), trimmed to 10`);
+    selection.skill_ids_ordered = selection.skill_ids_ordered.slice(0, 10);
+  }
+  if ((selection.project_ids_ordered || []).length > 3) {
+    errors.push(`too many projects (${selection.project_ids_ordered.length}), trimmed to 3`);
+    selection.project_ids_ordered = selection.project_ids_ordered.slice(0, 3);
+  }
   selection.skill_ids_ordered = (selection.skill_ids_ordered || []).filter(id => {
     if (!skillIds.has(id)) { errors.push(`unknown skill id: ${id}`); return false; }
     return true;
