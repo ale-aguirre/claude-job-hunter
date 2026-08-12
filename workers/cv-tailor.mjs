@@ -84,7 +84,9 @@ RULES:
   professional summary of 30 to 45 words, never a fragment or a headline. Start from
   summary_base and reorder or trim it; do not compress it into a phrase. You MAY weave in
   keywords from the JD ONLY if they match a real skill in the skills list. Do NOT add
-  technologies not in the skills list.
+  technologies not in the skills list. Do NOT inflate seniority: never use "expert",
+  "expertise", "senior", "deep experience" or similar unless summary_base says it.
+  Keep the experience framing of summary_base exactly (years, since when).
 - skill_ids_ordered: ordered subset of skill IDs most relevant to the JD. Include 6-10.
 - experience_bullet_ids: for each experience key, an ordered array of bullet IDs. Max 5 bullets for "cd".
 - project_ids_ordered: max 3 project IDs ordered by relevance.
