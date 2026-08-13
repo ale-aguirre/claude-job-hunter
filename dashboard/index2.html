@@ -216,7 +216,8 @@ function filaTodo(r) {
   d.innerHTML =
     cel('c-chk', `<input type="checkbox" data-id="${r.id}">`) +
     cel('c-co', esc(r.company) +
-      `<span class="badge b-${esc(r.balde)}">${{auto:'auto',semi:'email',manual:'manual'}[r.balde]||''}</span>` +
+      ({auto:'auto',semi:'email',manual:'manual'}[r.balde]
+        ? `<span class="badge b-${esc(r.balde)}">${{auto:'auto',semi:'email',manual:'manual'}[r.balde]}</span>` : '') +
       (r.dias_desde_encontrado <= 2 ? '<span class="badge new">new</span>' : '') +
       (SIN_CHANCE.test((r.company||'').trim()) ? '<span class="badge nochance">no fit</span>' : '')) +
     cel('c-ti', esc(r.title)) +
@@ -367,6 +368,10 @@ $('b-desc').onclick = () => post('/api/bulk', { ids: sel(), accion: 'descartar' 
 $('b-apliq').onclick = () => post('/api/bulk', { ids: sel(), accion: 'aplique' });
 
 load();
+// Refresco solo: cada 60s y al volver a la pestaña. Sin esto, los cambios
+// del scout o de la base solo aparecían recargando a mano.
+setInterval(load, 60000);
+addEventListener("focus", load);
 setInterval(load, 60000);
 </script>
 </body>

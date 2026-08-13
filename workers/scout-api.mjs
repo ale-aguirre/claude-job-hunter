@@ -131,6 +131,15 @@ function isRelevant(title = '', tags = [], notes = '') {
   return DEV_SIGNAL.test(titleOnly);
 }
 
+// Regla de Alexis (2026-08-13): las empresas tier-FAANG/labs quedan afuera del
+// pool por ~2 años. No es pesimismo, es foco: cada slot de atención va a
+// ofertas con probabilidad real hoy.
+const EXCLUDE_COMPANIES = new Set([
+  'openai','anthropic','cognition','perplexity','deepmind','google','meta','xai',
+  'mistral','scale','databricks','stripe','netflix','nvidia','coinbase','figma',
+  'apple','amazon','microsoft',
+]);
+
 // ─── URL validator ─────────────────────────────────────────────────────────
 async function validateUrl(url, timeout = 3000) {
   try {
@@ -168,6 +177,7 @@ function isSpecificJobUrl(url) {
 function upsertJob(company, title, url, platform, notes, postedAt = null) {
   if (!url || !url.startsWith('http')) return false;
   if (!isSpecificJobUrl(url)) return false;
+  if (EXCLUDE_COMPANIES.has((company || '').trim().toLowerCase())) return false;
   // Block aggregator URLs — we scrape those directly via their APIs
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
