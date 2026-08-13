@@ -122,7 +122,13 @@ function isRelevant(title = '', tags = [], notes = '') {
   if (EXCLUDE_ROLES.some(r => titleOnly.includes(r))) return false;
 
   // Accept if matches search terms
-  return ALL_SEARCH_TERMS.some(k => combined.includes(k.toLowerCase()));
+  if (!ALL_SEARCH_TERMS.some(k => combined.includes(k.toLowerCase()))) return false;
+
+  // El título tiene que oler a rol de desarrollo. Sin esto, los boards de
+  // empresas grandes (OpenAI, Cognition...) meten sourcers, SEO, supply chain
+  // y marketing solo porque el aviso dice "AI" en alguna parte.
+  const DEV_SIGNAL = /engineer|developer|desarrollador|programador|full[ -]?stack|front[ -]?end|swe|software|tech lead/i;
+  return DEV_SIGNAL.test(titleOnly);
 }
 
 // ─── URL validator ─────────────────────────────────────────────────────────
