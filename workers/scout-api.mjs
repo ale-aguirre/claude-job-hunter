@@ -30,7 +30,18 @@ console.log(`\n🌍 scout-api — Fast worldwide job scraping`);
 console.log(`Time: ${new Date().toISOString()}`);
 
 const profileKw = await getProfileKeywords();
-const SEARCH_TAGS   = profileKw.searchTerms.slice(0, 20);
+// Los términos de búsqueda mezclan el perfil (react, next...) con las keywords
+// de IA del .env: si quedan solo las del perfil, los fetchers consultan los
+// boards únicamente por frontend y los roles de agentes/LLM no aparecen.
+const _extraKw = (process.env.EXTRA_KEYWORDS || '').split(',').map(k => k.trim()).filter(Boolean);
+// Intercaladas: varios fetchers solo consultan los primeros 6 términos, así que
+// las de IA tienen que estar adelante, no colgadas al final.
+const SEARCH_TAGS   = [...new Set([
+  ...profileKw.searchTerms.slice(0, 3),
+  ..._extraKw.slice(0, 5),
+  ...profileKw.searchTerms.slice(3, 12),
+  ..._extraKw.slice(5),
+])].slice(0, 20);
 const EXCLUDE_TERMS = profileKw.excludeTerms || [];
 const CITY          = profileKw.city || '';
 const COUNTRY       = profileKw.country || 'ar';
@@ -47,7 +58,7 @@ const EXCLUDE_REGIONS = (process.env.EXCLUDE_REGIONS || EXCLUDE_REGIONS_DEFAULT)
 const CUSTOM_QUERIES = (process.env.SEARCH_QUERIES || '').split('|').map(q => q.trim()).filter(Boolean);
 
 // Extra keywords from .env — user can add AI/agentic terms without CV regeneration
-const EXTRA_KEYWORDS = (process.env.EXTRA_KEYWORDS || '').split(',').map(k => k.trim()).filter(Boolean);
+const EXTRA_KEYWORDS = _extraKw;
 const ALL_SEARCH_TERMS = [...new Set([...SEARCH_TAGS, ...EXTRA_KEYWORDS])];
 if (EXTRA_KEYWORDS.length) console.log(`Extra keywords: ${EXTRA_KEYWORDS.join(', ')}`);
 
