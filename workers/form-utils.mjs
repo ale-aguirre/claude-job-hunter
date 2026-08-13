@@ -45,8 +45,11 @@ export async function fillForm(page, coverLetter) {
 
   await fill('input[name="first_name"], input[name="firstName"], input[id*="first"], input[placeholder*="First name"], input[placeholder*="First Name"]', PROFILE.firstName);
   await fill('input[name="last_name"],  input[name="lastName"],  input[id*="last"],  input[placeholder*="Last name"],  input[placeholder*="Last Name"]',  PROFILE.lastName);
-  await fill('input[type="email"], input[name="email"]', PROFILE.email);
-  await fill('input[name="phone"], input[type="tel"]',   PROFILE.phone);
+  // Greenhouse's job-boards app renders the email field as <input type="text" id="email">
+  // (no name= and no type=email), so a selector limited to type/name never matched it —
+  // confirmed live: the field stayed empty and was flagged red on submit. id*= covers it.
+  await fill('input[type="email"], input[name="email"], input[id="email"], input[id*="email"]', PROFILE.email);
+  await fill('input[name="phone"], input[type="tel"], input[id="phone"], input[id*="phone"]',   PROFILE.phone);
   await fill('input[name="linkedin"], input[name="linkedin_profile"], input[placeholder*="LinkedIn"]', PROFILE.linkedin);
   await fill('input[name="github"],   input[placeholder*="GitHub"],  input[placeholder*="Github"]',   PROFILE.github);
   await fill('input[name="portfolio"], input[name="website"], input[placeholder*="portfolio"], input[placeholder*="Portfolio"], input[placeholder*="Website"]', PROFILE.portfolio);
@@ -56,6 +59,15 @@ export async function fillForm(page, coverLetter) {
 
 /**
  * Upload CV to any file input on the page. Silently skips if none found.
+ *
+ * DEPRECATED for ATS forms with a styled "Attach" button (Greenhouse/Ashby/etc):
+ * setInputFiles() on the hidden input attaches the file at the DOM level but
+ * bypasses the button's onClick handler, which is where these ATS wire up their
+ * own upload state. Confirmed live on GitLab's Greenhouse board: the DOM input
+ * ends up with files.length===1 but the ATS throws "Cannot read properties of
+ * undefined (reading 'uploadFile')" and never shows the filename — the exact
+ * failure from the 13/8 proof screenshots. Use uploadCVRobust() from
+ * form-answerer.mjs instead, which drives the real click→filechooser flow.
  * @param {import('playwright').Page} page
  */
 export async function uploadCV(page) {
