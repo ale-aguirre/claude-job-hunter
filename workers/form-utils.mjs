@@ -108,11 +108,21 @@ export async function verifySubmission(page, jobInfo) {
     'gracias', 'tu postulación', 'recibimos tu aplicación', 'aplicación enviada',
     'confirmation', 'successfully applied', 'you have applied',
   ];
-  const isConfirmed = SUCCESS_SIGNALS.some(s => pageText.toLowerCase().includes(s));
-  const urlChanged  = page.url() !== jobInfo.originalUrl;
+  const lower = pageText.toLowerCase();
+  const isConfirmed = SUCCESS_SIGNALS.some(s => lower.includes(s));
+  // Señales de que el form NO se envió. El 13/8 el verificador reportó
+  // CONFIRMED en 3 postulaciones que quedaron con validaciones en rojo y sin
+  // CV adjunto, porque un redirect de dominio (boards→job-boards.greenhouse)
+  // contaba como "la URL cambió". Un cambio de URL no prueba nada; un cartel
+  // de error prueba el fracaso.
+  const FAILURE_SIGNALS = [
+    'is required', 'field is required', 'this field', 'please complete',
+    'es requerido', 'campo obligatorio', 'resume/cv is required',
+  ];
+  const hasErrors = FAILURE_SIGNALS.some(s => lower.includes(s));
 
   return {
-    confirmed: isConfirmed || urlChanged,
+    confirmed: isConfirmed && !hasErrors,
     screenshotPath,
     finalUrl:  page.url(),
     pageTitle: await page.title().catch(() => ''),
