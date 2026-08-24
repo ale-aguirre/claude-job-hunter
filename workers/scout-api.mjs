@@ -59,7 +59,6 @@ const CUSTOM_QUERIES = (process.env.SEARCH_QUERIES || '').split('|').map(q => q.
 
 // Extra keywords from .env — user can add AI/agentic terms without CV regeneration
 const EXTRA_KEYWORDS = _extraKw;
-const ALL_SEARCH_TERMS = [...new Set([...SEARCH_TAGS, ...EXTRA_KEYWORDS])];
 if (EXTRA_KEYWORDS.length) console.log(`Extra keywords: ${EXTRA_KEYWORDS.join(', ')}`);
 
 // Tech stack exclusions — reject jobs focused on technologies not in the profile
@@ -88,6 +87,30 @@ function isExcluded(text = '') {
     || EXCLUDE_TERMS.some(r => t.includes(r));
 }
 
+// Desde dónde puede trabajar Alexis. Un aviso sin restricciones es abierto; uno
+// con restricciones sólo sirve si alguna lo incluye.
+const ELIGIBLE_LOCATIONS = [
+  'argentina', 'latam', 'latin america', 'south america', 'americas',
+  'worldwide', 'global', 'anywhere', 'international', 'remote',
+];
+
+/**
+ * ¿Puede postularse desde Argentina?
+ *
+ * Esto faltaba y costó caro. El 24/8 el aviso de Pavado entró con 9 puntos y
+ * quedó segundo en la lista de prioridades siendo "Remote, South Africa only".
+ * El scout nunca vio esa restricción porque el fetcher de Himalayas usaba el
+ * RSS, que no trae el campo, y guardaba la nota fija "Himalayas remote".
+ * Un aviso al que no podés aplicar no es un lead, es ruido con puntaje.
+ */
+function isEligibleLocation(restrictions = []) {
+  const list = (Array.isArray(restrictions) ? restrictions : [restrictions])
+    .filter(Boolean).map(s => String(s).toLowerCase());
+  if (!list.length) return true;                       // sin restricción declarada
+  if (list.some(l => EXCLUDE_REGIONS.some(r => l.includes(r)))) return false;
+  return list.some(l => ELIGIBLE_LOCATIONS.some(e => l.includes(e)));
+}
+
 // Salary filter patterns — reject low-pay jobs (< $2000/month)
 const LOW_SALARY_PATTERNS = [
   /\$\d{1,2}\/hr/i,                          // $8/hr, $15/hr (2-digit)
@@ -108,27 +131,86 @@ function hasLowSalary(text = '') {
   return false;
 }
 
+// ─── Contador de descartes ─────────────────────────────────────────────────
+// Regla que salió del 20/8: TODO filtro reporta cuánto tiró y por qué, no sólo
+// cuánto dejó pasar. Un scout que imprime "+0 new" se lee como "no hay nada
+// nuevo" cuando en realidad significa "descarté 99 y no te lo dije".
+const DROPPED = Object.create(null);
+let SEEN = 0;
+
+function drop(reason, sample = '') {
+  DROPPED[reason] ??= { count: 0, sample: '' };
+  DROPPED[reason].count++;
+  if (!DROPPED[reason].sample && sample) DROPPED[reason].sample = sample.slice(0, 70);
+  return false;
+}
+
+/**
+ * ¿Aparece `needle` como palabra completa dentro de `hay`?
+ *
+ * Mismo helper que rules.mjs, y está acá por la misma razón. Un `includes()` a
+ * secas sobre EXCLUDE_TECH descartaba en silencio media búsqueda:
+ *   'java'  matchea dentro de "Senior (Java)Script Developer"
+ *   'scala' matchea dentro de "Engineer, (Scala)bility"
+ *   'go'    matchea dentro de "(Go)lang" pero también dentro de "Django"
+ * Es la tercera vez que aparece este bug (antes fue 'cto' adentro de "proyecto").
+ */
+function hasWord(hay, needle) {
+  const esc = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9+#])${esc}([^a-z0-9+#]|$)`, 'i').test(hay);
+}
+
+// El título tiene que ser de un puesto técnico. Este es el gate real: separa
+// dev de no-dev, que es lo único que hay que decidir acá.
+const DEV_SIGNAL = /engineer|developer|desarrollador|programador|full[ -]?stack|front[ -]?end|back[ -]?end|swe\b|software|tech lead|architect/i;
+
+/**
+ * ¿Este aviso entra al pool?
+ *
+ * ANTES esta función exigía que el aviso contuviera literalmente una de las
+ * frases de búsqueda ('ai agent', 'llm engineer', 'mcp server'...). Medido el
+ * 20/8 sobre RemoteOK: de 100 avisos, 98 se caían por esa sola línea. Se
+ * perdieron cosas como "Senior Software Engineer Case Execution" sólo porque
+ * el aviso no escribía la frase exacta.
+ *
+ * El error de diseño era usar una PREFERENCIA como si fuera un REQUISITO. Que
+ * el puesto sea de agentes/LLM es algo deseable, no excluyente, y eso ya está
+ * expresado donde corresponde — en BOOST_HIGH de rules.mjs, que ordena el
+ * ranking. Acá sólo se decide si es un aviso de desarrollo que Alexis puede
+ * tomar. El orden lo pone el score, no el filtro.
+ */
 function isRelevant(title = '', tags = [], notes = '') {
-  const combined = `${title} ${tags.join(' ')} ${notes}`.toLowerCase();
+  SEEN++;
+  const combined  = `${title} ${tags.join(' ')} ${notes}`.toLowerCase();
   const titleOnly = title.toLowerCase();
 
-  // Reject if low salary detected
-  if (hasLowSalary(combined)) return false;
+  if (!titleOnly.trim()) return drop('titulo vacio');
+  if (hasLowSalary(combined)) return drop('sueldo bajo', title);
 
-  // Reject if title is dominated by excluded tech stack
-  if (EXCLUDE_TECH.some(t => titleOnly.includes(t))) return false;
+  const badTech = EXCLUDE_TECH.find(t => hasWord(titleOnly, t));
+  if (badTech) return drop(`stack excluido (${badTech})`, title);
 
-  // Reject non-dev roles
-  if (EXCLUDE_ROLES.some(r => titleOnly.includes(r))) return false;
+  const badRole = EXCLUDE_ROLES.find(r => titleOnly.includes(r));
+  if (badRole) return drop(`rol no-dev (${badRole})`, title);
 
-  // Accept if matches search terms
-  if (!ALL_SEARCH_TERMS.some(k => combined.includes(k.toLowerCase()))) return false;
+  if (!DEV_SIGNAL.test(titleOnly)) return drop('titulo no suena a dev', title);
 
-  // El título tiene que oler a rol de desarrollo. Sin esto, los boards de
-  // empresas grandes (OpenAI, Cognition...) meten sourcers, SEO, supply chain
-  // y marketing solo porque el aviso dice "AI" en alguna parte.
-  const DEV_SIGNAL = /engineer|developer|desarrollador|programador|full[ -]?stack|front[ -]?end|swe|software|tech lead/i;
-  return DEV_SIGNAL.test(titleOnly);
+  return true;
+}
+
+/**
+ * Imprime el balance del filtro. Se llama una sola vez al final de la corrida.
+ */
+function reportDropped() {
+  const rows = Object.entries(DROPPED).sort((a, b) => b[1].count - a[1].count);
+  const tirados = rows.reduce((s, [, v]) => s + v.count, 0);
+  if (!SEEN) return '';
+  console.log(`\n📉 Filtro: vio ${SEEN} avisos, dejó pasar ${SEEN - tirados}, descartó ${tirados}`);
+  for (const [reason, v] of rows) {
+    const pct = ((v.count / SEEN) * 100).toFixed(1).padStart(5);
+    console.log(`   ${String(v.count).padStart(5)}  ${pct}%  ${reason}${v.sample ? `   ej. "${v.sample}"` : ''}`);
+  }
+  return rows.map(([r, v]) => `${r}=${v.count}`).join(' ');
 }
 
 // Regla de Alexis (2026-08-13): las empresas tier-FAANG/labs quedan afuera del
@@ -380,27 +462,53 @@ async function scrapeLever() {
 // ─── 5. HIMALAYAS ───────────────────────────────────────────────────────────
 async function scrapeHimalayas() {
   let count = 0;
-  const searchQ = SEARCH_TAGS[0] || 'developer';
+  // La API JSON en vez del RSS. El RSS no trae locationRestrictions y por eso
+  // entraban avisos cerrados a otro país con la nota fija "Himalayas remote".
+  // Acá además viene el sueldo, el tipo de contrato y la seniority.
+  //
+  // Ojo, la API ignora ?q= — verificado el 24/8, 'react' y 'software engineer'
+  // devuelven el mismo feed de 103.870 avisos. Es un feed cronológico de todos
+  // los rubros, así que el filtrado es del lado nuestro y hay que paginar por
+  // cursor. El contador de descartes deja ver cuánto de esto es ruido.
+  let cursor = '';
   try {
-    const r = await fetch(`https://himalayas.app/jobs/rss?q=${encodeURIComponent(searchQ)}&remote=true`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const xml   = await r.text();
-    const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-    for (const item of items.slice(0, 30)) {
-      const title   = item.match(/<title><!\[CDATA\[(.*?)\]\]>/)?.[1] || item.match(/<title>(.*?)<\/title>/)?.[1] || '';
-      const link    = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
-      // El RSS de Himalayas no trae <author>, pero la empresa está en el slug
-      // de la URL: himalayas.app/companies/<empresa>/jobs/...
-      const slug = link.match(/himalayas\.app\/companies\/([^/]+)/)?.[1] || '';
-      const company = item.match(/<author>(.*?)<\/author>/)?.[1]
-        || (slug ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Unknown');
-      const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || null;
-      const postedAt = pubDate ? new Date(pubDate).toISOString() : null;
-      if (!isRelevant(title, [])) continue;
-      if (upsertJob(company, title, link, 'himalayas', 'Himalayas remote', postedAt)) count++;
+    for (let page = 0; page < 3; page++) {
+      const url = `https://himalayas.app/jobs/api?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      cursor = data.nextCursor || '';
+
+      for (const job of (data.jobs || [])) {
+        const title = job.title || '';
+        const link  = job.applicationLink || job.guid || '';
+        const slug  = job.companySlug || '';
+        const company = job.companyName
+          || (slug ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Unknown');
+
+        // isRelevant() primero porque es quien lleva la cuenta de avisos vistos.
+        // Si el chequeo de país corriera antes, el balance del filtro no cerraría.
+        if (!isRelevant(title, job.categories || [], job.excerpt || '')) continue;
+        const locs = job.locationRestrictions || [];
+        if (!isEligibleLocation(locs)) { drop(`pais no elegible (${locs.join('/') || 'sin dato'})`, title); continue; }
+
+        const salary = (job.minSalary && job.maxSalary)
+          ? `Salary: ${job.currency || 'USD'} ${job.minSalary}-${job.maxSalary}/${job.salaryPeriod || 'annual'}`
+          : '';
+        const notes = [
+          `Location: ${locs.length ? locs.join(', ') : 'sin restriccion'}`,
+          salary,
+          job.employmentType,
+          (job.seniority || []).join('/'),
+        ].filter(Boolean).join(' | ');
+
+        const postedAt = job.pubDate ? new Date(job.pubDate * 1000).toISOString() : null;
+        if (upsertJob(company, title, link, 'himalayas', notes, postedAt)) count++;
+      }
+      if (!cursor) break;
+      await new Promise(res => setTimeout(res, 400));
     }
-  } catch { /* skip */ }
+  } catch (e) { console.log(`  Himalayas: falló (${e.message})`); }
   console.log(`  Himalayas: +${count} new`);
   return count;
 }
@@ -909,8 +1017,12 @@ const groqCount = 0;
 const total = results.reduce((s, r) => s + (r.value || 0), 0) + hnCount + groqCount;
 console.log(`\n✅ scout-api done: +${total} new jobs`);
 
+// El balance del filtro va SIEMPRE, aunque el resultado sea 0. Justamente
+// cuando es 0 es cuando hace falta saber si no había nada o si se tiró todo.
+const dropSummary = reportDropped();
+
 db.prepare('INSERT INTO agent_log (agent,action,detail,status) VALUES (?,?,?,?)').run(
-  'ScoutAPI', 'scan_complete', `+${total} new jobs`, 'ok'
+  'ScoutAPI', 'scan_complete', `+${total} new jobs | vistos=${SEEN} | ${dropSummary}`, 'ok'
 );
 db.close();
 

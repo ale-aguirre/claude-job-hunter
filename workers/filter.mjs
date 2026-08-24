@@ -20,18 +20,38 @@ const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g;
 const EMAIL_SKIP = ['noreply', 'no-reply', 'donotreply', 'notifications', 'bounce', 'mailer', 'system@', 'alerts@',
   'your@', 'you@', 'example@', '@example.', 'email@', 'name@', 'user@', 'test@', 'sentry.', '@sentry', '.png', '.jpg', '.svg', 'wixpress'];
 
-// Allowlist regex for valid title characters
-const TITLE_CHARS_RE = /^[\w\s\/\+\#\.,&\(\)-]+$/i;
+// Allowlist regex for valid title characters.
+// Incluye ':' y acentos a propósito: sin ellos se descartaban títulos legítimos
+// como "Senior Software Engineer (Typescript), AI Clients: Duo CLI" o cualquier
+// aviso en español con tildes o eñes.
+const TITLE_CHARS_RE = /^[\p{L}\p{N}_\s/+#.,:&()[\]'‐-―-]+$/u;
+
+// Emojis y pictogramas decorativos. Varios boards abren el título con uno
+// (⚙️ Senior/Staff Platform Engineer). Eso no ensucia el título, es adorno.
+const DECOR_RE = /[\p{Extended_Pictographic}\p{Emoji_Presentation}️‍]/gu;
+
+/**
+ * Saca el adorno y normaliza espacios. El título limpio es el que se valida y
+ * el que se guarda.
+ */
+export function stripDecor(raw = '') {
+  return raw.replace(DECOR_RE, '').replace(/\s+/g, ' ').trim();
+}
 
 /**
  * Returns true if a raw title string looks like garbage / truncated text.
  * Checks: >70 chars, illegal chars, starts with lowercase letter.
+ *
+ * El adorno se saca ANTES de validar. Antes se rechazaba de plano y así se
+ * perdían avisos buenos por un emoji al principio, que es la misma familia de
+ * fallo que el filtro que tiraba 98 de cada 100 avisos sin decirlo.
  */
 function isBadTitle(raw) {
-  if (!raw) return true;
-  if (raw.length > 70) return true;
-  if (!TITLE_CHARS_RE.test(raw)) return true;
-  if (/^[a-z]/.test(raw)) return true;  // starts with lowercase = likely a sentence fragment
+  const t = stripDecor(raw);
+  if (!t) return true;
+  if (t.length > 70) return true;
+  if (!TITLE_CHARS_RE.test(t)) return true;
+  if (/^[a-z]/.test(t)) return true;  // starts with lowercase = likely a sentence fragment
   return false;
 }
 
@@ -54,6 +74,14 @@ const jobs = db.prepare(
 let scored = 0, skipped = 0, emailFound = 0;
 
 for (const job of jobs) {
+  // Si el título traía adorno, se guarda ya limpio. Si no se persiste acá, el
+  // emoji vuelve a aparecer en el dashboard y en el CV adaptado.
+  const sinDecor = stripDecor(job.title);
+  if (sinDecor && sinDecor !== job.title) {
+    if (!DRY_RUN) db.prepare('UPDATE applications SET title=? WHERE id=?').run(sinDecor, job.id);
+    job.title = sinDecor;
+  }
+
   // BAD_TITLE check: attempt cleanTitle first; if still bad, skip
   if (isBadTitle(job.title)) {
     const cleaned = cleanTitle(job.title);
