@@ -13,7 +13,11 @@ const db  = openDB();
 const args = process.argv.slice(2);
 const DRY_RUN    = args.includes('--dry-run');
 const FILL_CHECK = args.includes('--fill-check'); // full fill (answers + CV), screenshot, never submits
-const LIMIT   = parseInt(args.find(a => a.startsWith('--limit='))?.split('=')[1] || '999');
+// Tope por corrida. Antes el default era 999, o sea "postulá a todo lo que haya
+// de una sentada", que es justo lo que hace que un board te marque como bot.
+// Con 8 y la pausa aleatoria, una corrida se parece a una tarde de alguien
+// postulando. Se puede subir a mano con --limit= cuando haga falta.
+const LIMIT   = parseInt(args.find(a => a.startsWith('--limit='))?.split('=')[1] || '8');
 const FILLCHECK_DIR = process.env.FILLCHECK_DIR || 'C:/tmp';
 
 const AGENT = 'ATS-Apply';
@@ -154,7 +158,30 @@ const { page, close: closeBrowser } = await getBrowser();
 
 let applied = 0, blocked = 0, skipped = 0, filteredOut = 0;
 
+/**
+ * Pausa entre postulaciones.
+ *
+ * Antes esto era `setTimeout(r, 2000)` fijo para todos los casos. Dos problemas.
+ * Primero, 2 segundos significa 20 postulaciones en menos de un minuto de espera
+ * acumulada, desde una sola IP y una sola sesión de browser: eso es la firma de
+ * bot que venían marcando algunos boards. Y segundo, un intervalo CONSTANTE es
+ * en sí mismo una firma, porque ninguna persona tarda exactamente lo mismo entre
+ * un formulario y el siguiente.
+ *
+ * Ahora el intervalo es aleatorio y sólo es largo cuando de verdad se envió algo.
+ * Saltear un aviso ya visto no le cuesta nada al servidor y no necesita pausa.
+ */
+function pausaEntrePostulaciones(huboEnvio) {
+  const [min, max] = huboEnvio ? [45_000, 150_000] : [1_500, 4_000];
+  const ms = Math.floor(min + Math.random() * (max - min));
+  if (huboEnvio) console.log(`  ⏸  esperando ${Math.round(ms / 1000)}s antes de la próxima`);
+  return new Promise(r => setTimeout(r, ms));
+}
+
 for (const target of targets) {
+  // Sólo un envío real amerita la pausa larga. Se marca en los caminos que
+  // efectivamente tocaron el formulario del board.
+  let seAplico = false;
   const ex = db.prepare('SELECT id FROM applications WHERE url=? AND status=?').get(target.url, 'applied');
   if (ex) { console.log(`⏭  Already applied: ${target.company}`); skipped++; continue; }
 
@@ -291,6 +318,9 @@ for (const target of targets) {
       blocked++; continue;
     }
 
+    // Desde acá hay un envío real contra el board, así que corresponde la
+    // pausa larga pase lo que pase con el resultado.
+    seAplico = true;
     const outcome = await submitWithRetry(page, target);
     if (outcome.status === 'applied') {
       log('applied', `${target.company} | ${target.title} → CONFIRMED at ${outcome.proof.finalUrl.slice(0, 60)}${outcome.retried ? ' (after retry)' : ''}`);
@@ -307,7 +337,7 @@ for (const target of targets) {
     markResult(db, target, 'found', `BLOCKED: Error — ${e.message.slice(0, 80)}`);
     blocked++;
   }
-  await new Promise(r => setTimeout(r, 2000));
+  await pausaEntrePostulaciones(seAplico);
 }
 
 try { await closeBrowser(); } catch {}
