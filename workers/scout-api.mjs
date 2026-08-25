@@ -20,6 +20,7 @@ const Database = require('better-sqlite3');
 
 const db       = new Database(fileURLToPath(new URL('applications.db', import.meta.url)));
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 // ─── Job preferences from .env ─────────────────────────────────────────────
 const JOB_TYPE       = process.env.JOB_TYPE       || 'any';
@@ -846,8 +847,9 @@ async function scrapeViaGroq() {
         method: 'POST',
         headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           max_tokens: 1500,
+          reasoning_effort: 'low',
           messages: [
             { role: 'system', content: 'Job market researcher. Return valid JSON arrays only with real URLs.' },
             { role: 'user',   content: p.prompt }

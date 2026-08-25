@@ -19,6 +19,7 @@ import 'dotenv/config';
 const CACHE_PATH = fileURLToPath(new URL('.profile-keywords.json', import.meta.url));
 const CACHE_TTL  = 24 * 60 * 60 * 1000; // 24 hours
 const GROQ_KEY   = process.env.GROQ_API_KEY       || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const OR_KEY     = process.env.OPENROUTER_API_KEY  || '';
 
 /**
@@ -63,7 +64,7 @@ export async function getProfileKeywords() {
 
   // 4. LLM analysis — Groq first, OpenRouter free as fallback
   const llmProviders = [
-    GROQ_KEY && { url: 'https://api.groq.com/openai/v1/chat/completions', key: GROQ_KEY, model: 'llama-3.3-70b-versatile' },
+    GROQ_KEY && { url: 'https://api.groq.com/openai/v1/chat/completions', key: GROQ_KEY, model: GROQ_MODEL },
     OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'google/gemma-3-4b-it:free' },
     OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'meta-llama/llama-3.2-3b-instruct:free' },
   ].filter(Boolean);
@@ -75,8 +76,13 @@ export async function getProfileKeywords() {
       headers: { Authorization: `Bearer ${provider.key}`, 'Content-Type': 'application/json', ...(provider.url.includes('openrouter') ? { 'HTTP-Referer': 'https://huntdesk.local', 'X-Title': 'HuntDesk' } : {}) },
       body: JSON.stringify({
         model: provider.model,
-        max_tokens: 900,
+        max_tokens: 1500,
         temperature: 0.1,
+        // gpt-oss razona antes de contestar y ese razonamiento se descuenta de
+        // max_tokens: sin esto la respuesta vuelve vacía y el extractor cae al
+        // fallback de config, que sólo tiene keywords de frontend. Con el CV de
+        // AI del perfil eso descartaba 287 de 289 avisos en apply-ats.
+        ...(provider.url.includes('groq') ? { reasoning_effort: 'low' } : {}),
         messages: [
           {
             role: 'system',

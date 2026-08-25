@@ -14,6 +14,7 @@ import nodemailer from 'nodemailer';
 
 const db = openDB();
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const GMAIL_USER = process.env.EMAIL || '';
 const GMAIL_PASS = process.env.GMAIL_APP_PASSWORD || '';
 const DRY_RUN = process.argv.includes('--dry-run');
@@ -122,8 +123,9 @@ ${PROFILE_TEXT}`;
       method: 'POST',
       headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 300,
+        model: GROQ_MODEL,
+        max_tokens: 800,
+        reasoning_effort: 'low',
         temperature: 0.7,
         messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       }),

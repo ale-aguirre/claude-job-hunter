@@ -130,23 +130,51 @@ function alreadyAppliedToday(company) {
 }
 
 // Note: getonbrd.com removed — requires active session cookies (use apply-from-db.mjs with Chrome mirror instead)
+//
+// El ORDER BY no es cosmético. Sin él SQLite devuelve las filas en orden de
+// rowid, o sea por antigüedad de descubrimiento, y como el tope por corrida es
+// de 8, el applier gastaba la corrida entera en los 8 avisos más viejos que
+// tuvieran URL de ATS. El 24/8 eso fueron ocho de gitlab con score 1-3, todos
+// location-restricted: la corrida terminó sin postular a nada, mientras un
+// aviso de score 9 seguía esperando en la misma tabla.
+//
+// filter.mjs venía calculando y guardando `score` desde siempre y nadie lo leía
+// acá. Un puntaje que no ordena nada es un puntaje que no existe.
 const allDbJobs = db.prepare(`
-  SELECT company, title, url FROM applications
+  SELECT company, title, url, COALESCE(score, 0) AS score FROM applications
   WHERE status='found'
+    -- Todo descarte terminal se escribe con el prefijo BLOCKED:. El filtro de
+    -- ubicacion escribia SKIPPED:, que nadie leia: los avisos rechazados por pais
+    -- volvian a la cola en cada corrida. Cinco avisos de gitlab, todos "Remote, US",
+    -- se comian 4 de los 5 cupos de cada corrida desde el 21/8.
     AND (notes NOT LIKE 'BLOCKED:%' OR notes IS NULL)
     AND (url LIKE '%ashbyhq.com%' OR url LIKE '%lever.co%'
       OR url LIKE '%greenhouse.io%' OR url LIKE '%workable.com%'
       OR url LIKE '%personio.com%'
       OR url LIKE '%careers-page.com%' OR url LIKE '%bairesdev.com%')
+  ORDER BY score DESC, applied_at DESC
 `).all();
 
-const dbJobs = allDbJobs.filter(j => isRelevantTitle(j.title) && !alreadyAppliedToday(j.company));
-console.log(`Role filter: ${allDbJobs.length} ATS jobs → ${dbJobs.length} relevant (excl. company daily cap)`);
+// Mismo criterio que el scout: un filtro que descarta en silencio es un filtro
+// en el que no se puede confiar. Acá se descartaba por dos razones distintas y
+// sólo se imprimía el total.
+let fueraPorRol = 0, fueraPorCupoEmpresa = 0;
+const dbJobs = allDbJobs.filter(j => {
+  if (!isRelevantTitle(j.title)) { fueraPorRol++; return false; }
+  if (alreadyAppliedToday(j.company)) { fueraPorCupoEmpresa++; return false; }
+  return true;
+});
+console.log(`Role filter: ${allDbJobs.length} ATS jobs → ${dbJobs.length} relevant`);
+console.log(`  descartados: ${fueraPorRol} por titulo/rol, ${fueraPorCupoEmpresa} por cupo diario de la empresa`);
 
 const targets = dbJobs.map(j => ({
   ...j,
   ats: ATS_URL_PATTERNS.find(p => p.pattern.test(j.url))?.ats || 'unknown',
 })).slice(0, LIMIT);
+
+if (targets.length) {
+  console.log(`Rango de score en esta corrida: ${targets[0].score} → ${targets[targets.length - 1].score}`);
+}
 
 const MODE = FILL_CHECK ? 'FILL-CHECK (no submit)' : DRY_RUN ? 'DRY RUN' : 'LIVE';
 console.log(`\n🚀 ATS Direct Apply — ${MODE}`);
@@ -195,7 +223,7 @@ for (const target of targets) {
     const elig = isLocationEligible(loc);
     if (!elig.ok) {
       log('skipped_location', `${target.company} | ${target.title} — ${elig.reason}`, 'warn');
-      markResult(db, target, 'found', `SKIPPED: ${elig.reason}`);
+      markResult(db, target, 'found', `BLOCKED: ${elig.reason}`);
       filteredOut++; continue;
     }
   }
@@ -226,7 +254,7 @@ for (const target of targets) {
       const elig = isLocationEligible(loc);
       if (!elig.ok) {
         log('skipped_location', `${target.company} | ${target.title} — ${elig.reason}`, 'warn');
-        markResult(db, target, 'found', `SKIPPED: ${elig.reason}`);
+        markResult(db, target, 'found', `BLOCKED: ${elig.reason}`);
         filteredOut++; continue;
       }
     }

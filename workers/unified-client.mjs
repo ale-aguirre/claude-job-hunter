@@ -25,7 +25,7 @@ const OR_KEY    = process.env.OPENROUTER_API_KEY || '';
 const OLLAMA    = 'http://localhost:11434';
 
 // Model routing — smarter model for orchestration, faster for content tasks
-const GROQ_MODEL       = 'llama-3.3-70b-versatile';
+const GROQ_MODEL       = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const OR_MODEL_SMART   = 'anthropic/claude-haiku-4.5';        // Senku / analyst — best decisions
 const OR_MODEL_FREE    = 'meta-llama/llama-3.3-70b-instruct:free'; // fallback free
 const OLLAMA_MODEL     = 'deepseek-r1:8b';   // best local for reasoning

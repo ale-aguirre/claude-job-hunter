@@ -7,7 +7,11 @@
 const GROQ_KEY  = process.env.GROQ_API_KEY || '';
 const GROQ_BASE = 'https://api.groq.com/openai/v1/chat/completions';
 const MODEL_FAST  = 'llama-3.1-8b-instant';
-const MODEL_SMART = 'llama-3.3-70b-versatile';
+// Groq dio de baja llama-3.3-70b-versatile (aviso del 2026-07-02). El reemplazo
+// ya estaba puesto en anthropic-client.mjs pero quedó sin propagar acá, en
+// profile-extractor, cold-email y scout-api: cuatro archivos pidiendo un modelo
+// que ya no existe. El síntoma no era un error, era un fallback silencioso.
+const MODEL_SMART = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 const SYSTEM_PROMPTS = {
   researcher:
@@ -49,6 +53,7 @@ async function callGroq(agentName, message, modelOverride) {
       ],
       max_tokens:  2048,
       temperature: 0.7,
+      reasoning_effort: 'low',
     }),
     signal: AbortSignal.timeout(90000),
   });
