@@ -983,30 +983,44 @@ async function scrapeJobgether() {
 // Google/Indeed/Career discovery moved to scout-browser.mjs (needs real browser, not fetch)
 
 // ─── RUN ──────────────────────────────────────────────────────────────────
-const results = await Promise.allSettled([
-  scrapeRemotive(),
-  scrapeRemoteOK(),
-  scrapeWeWorkRemotely(),
-  scrapeGreenhouse(),
-  scrapeLever(),
-  scrapeAshby(),
-  scrapeHimalayas(),
-  scrapeContra(),
-  scrapeTorre(),
+//
+// Cada fetcher va con su nombre al lado. Antes esto era un array anónimo de
+// llamadas y el total salía de `results.reduce((s, r) => s + (r.value || 0), 0)`:
+// una fuente que tiraba excepción quedaba en `status: 'rejected'`, su `value`
+// era undefined, el `|| 0` la convertía en cero y el error no se imprimía en
+// ningún lado. Nueve de las dieciocho fuentes llevaban meses aportando 0 avisos
+// —weworkremotely, contra, getonbrd, workana, europeremotely, jobgether,
+// bumeran, computrabajo y lever— y el único número visible era el total, que
+// seguía dando positivo gracias a ashby y greenhouse.
+//
+// Es el mismo agregado que escondía Arbeitnow: 60 enviadas, 0 confirmadas, y un
+// promedio sano. Una fuente que no aporta tiene que decirlo por su nombre.
+const FUENTES = [
+  ['remotive',        scrapeRemotive],
+  ['remoteok',        scrapeRemoteOK],
+  ['weworkremotely',  scrapeWeWorkRemotely],
+  ['greenhouse',      scrapeGreenhouse],
+  ['lever',           scrapeLever],
+  ['ashby',           scrapeAshby],
+  ['himalayas',       scrapeHimalayas],
+  ['contra',          scrapeContra],
+  ['torre',           scrapeTorre],
   // Arbeitnow disabled: 142 leads, 60 applied, 0 verifiable. Its listings are
   // German-market roles whose apply flow gives no success state to read back,
   // so every submission landed as UNVERIFIED. See docs/EVAL.md.
-  // scrapeArbeitnow(),
-  scrapeTheMuse(),
-  scrapeGetOnBrd(),
-  scrapeJobicy(),
-  scrapeWorkana(),
-  scrapeEuropeRemotely(),
-  scrapeJobgether(),
+  // ['arbeitnow',    scrapeArbeitnow],
+  ['themuse',         scrapeTheMuse],
+  ['getonbrd',        scrapeGetOnBrd],
+  ['jobicy',          scrapeJobicy],
+  ['workana',         scrapeWorkana],
+  ['europeremotely',  scrapeEuropeRemotely],
+  ['jobgether',       scrapeJobgether],
   // Local LATAM portals — always run (even without city, search nationally)
-  scrapeBumeran(),
-  scrapeComputrabajo(),
-]);
+  ['bumeran',         scrapeBumeran],
+  ['computrabajo',    scrapeComputrabajo],
+];
+
+const results = await Promise.allSettled(FUENTES.map(([, fn]) => fn()));
 
 // Sequential sources (rate-limited or heavier)
 const hnCount   = await scrapeHNWhoIsHiring();
@@ -1016,8 +1030,52 @@ const hnCount   = await scrapeHNWhoIsHiring();
 // contra una API, no una pregunta a un modelo.
 const groqCount = 0;
 
-const total = results.reduce((s, r) => s + (r.value || 0), 0) + hnCount + groqCount;
-console.log(`\n✅ scout-api done: +${total} new jobs`);
+const aportes = FUENTES.map(([nombre], i) => {
+  const r = results[i];
+  return r.status === 'rejected'
+    ? { nombre, n: 0, error: String(r.reason?.message || r.reason).slice(0, 80) }
+    : { nombre, n: r.value || 0, error: null };
+});
+aportes.push({ nombre: 'hn-hiring', n: hnCount, error: null });
+
+const total = aportes.reduce((s, a) => s + a.n, 0) + groqCount;
+console.log(`
+✅ scout-api done: +${total} new jobs`);
+
+// Balance por fuente. Va SIEMPRE, igual que el del filtro: cuando el total es
+// bajo, lo que importa es saber cuál de las fuentes dejó de traer.
+const rotas = aportes.filter(a => a.error);
+const vivas = aportes.filter(a => a.n > 0).sort((a, b) => b.n - a.n);
+
+// "0 nuevos" en una corrida no dice nada: puede ser que la fuente ande bien y
+// ya estuviera todo deduplicado. Lo que sí es una señal es que una fuente no
+// haya aportado NUNCA una fila en toda la historia de la base. Sin esta
+// distinción, ocho fuentes rotas se escondían detrás del mismo cero que las
+// fuentes sanas de un día tranquilo.
+const historico = db.prepare('SELECT source, COUNT(*) n FROM applications GROUP BY source')
+  .all().reduce((acc, r) => (acc[r.source] = r.n, acc), {});
+
+const cero      = aportes.filter(a => !a.error && a.n === 0);
+const mudas     = cero.filter(a => !(historico[a.nombre] > 0));   // nunca trajo nada
+const dedup     = cero.filter(a =>   historico[a.nombre] > 0);    // anda, hoy no hubo nuevos
+
+console.log(`
+📊 Fuentes: ${vivas.length} aportaron, ${dedup.length} sin novedades, ${mudas.length} nunca aportaron, ${rotas.length} con error`);
+for (const a of vivas) console.log(`     +${String(a.n).padStart(4)}  ${a.nombre}`);
+for (const a of rotas) console.log(`     ERR   ${a.nombre} — ${a.error}`);
+if (dedup.length) console.log(`     0     sin novedades: ${dedup.map(a => a.nombre).join(', ')}`);
+if (mudas.length) console.log(`     ⚠     NUNCA aportaron un aviso: ${mudas.map(a => a.nombre).join(', ')}`);
+
+const fuenteSummary = [
+  vivas.map(a => `${a.nombre}=${a.n}`).join(' '),
+  rotas.length ? `ERROR: ${rotas.map(a => `${a.nombre}(${a.error})`).join(' ')}` : '',
+  mudas.length ? `NUNCA APORTARON: ${mudas.map(a => a.nombre).join(',')}` : '',
+  dedup.length ? `sin novedades: ${dedup.map(a => a.nombre).join(',')}` : '',
+].filter(Boolean).join(' | ');
+
+db.prepare('INSERT INTO agent_log (agent,action,detail,status) VALUES (?,?,?,?)').run(
+  'ScoutAPI', 'fuentes', fuenteSummary, (rotas.length || mudas.length) ? 'warn' : 'ok'
+);
 
 // El balance del filtro va SIEMPRE, aunque el resultado sea 0. Justamente
 // cuando es 0 es cuando hace falta saber si no había nada o si se tiró todo.
