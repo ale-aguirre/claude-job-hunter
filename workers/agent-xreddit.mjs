@@ -60,8 +60,14 @@ async function extractJobInfo(text, source, authorHandle) {
       method: 'POST',
       headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 200,
+        // llama-3.1-8b-instant tambien salio del catalogo de Groq: hoy la API
+        // solo sirve gpt-oss, qwen3 y compound. Verificado contra /v1/models.
+        model: process.env.GROQ_FAST_MODEL || 'openai/gpt-oss-20b',
+        // 200 no alcanza con un modelo que razona antes de contestar: el
+        // razonamiento se descuenta del mismo presupuesto y la respuesta sale
+        // vacia.
+        max_tokens: 800,
+        reasoning_effort: 'low',
         messages: [{
           role: 'system',
           content: 'Extract job info from this social post. Return JSON only: {company,role,email,remote,relevant,contact_type} where relevant=true only if it\'s a REAL job offer (not "I\'m looking for work"), remote=true if remote/LATAM ok, contact_type="email"|"dm"|"link"|"unknown", email=null if not present in text.',
@@ -72,7 +78,14 @@ async function extractJobInfo(text, source, authorHandle) {
     const raw = d.choices?.[0]?.message?.content || '';
     const m = raw.match(/\{[\s\S]*?\}/);
     return m ? JSON.parse(m[0]) : null;
-  } catch { return null; }
+  } catch (e) {
+    // Antes esto era `catch { return null; }`. Con el modelo dado de baja, cada
+    // post volvia null y se descartaba como "no es una oferta real": la fuente
+    // se apagó sin una sola linea de error. Un extractor que no puede extraer
+    // tiene que decirlo.
+    console.log(`  [xreddit] extract fallo: ${String(e.message || e).slice(0, 80)}`);
+    return null;
+  }
 }
 
 let totalX = 0, totalReddit = 0;

@@ -27,7 +27,7 @@ const OLLAMA    = 'http://localhost:11434';
 // Model routing — smarter model for orchestration, faster for content tasks
 const GROQ_MODEL       = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const OR_MODEL_SMART   = 'anthropic/claude-haiku-4.5';        // Senku / analyst — best decisions
-const OR_MODEL_FREE    = 'meta-llama/llama-3.3-70b-instruct:free'; // fallback free
+const OR_MODEL_FREE    = 'z-ai/glm-5.2:free';                 // fallback free (el id :free de llama ya no existe)
 const OLLAMA_MODEL     = 'deepseek-r1:8b';   // best local for reasoning
 
 // Agents that need smart orchestration → use Haiku on OpenRouter

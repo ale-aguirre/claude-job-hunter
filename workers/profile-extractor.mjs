@@ -65,8 +65,13 @@ export async function getProfileKeywords() {
   // 4. LLM analysis — Groq first, OpenRouter free as fallback
   const llmProviders = [
     GROQ_KEY && { url: 'https://api.groq.com/openai/v1/chat/completions', key: GROQ_KEY, model: GROQ_MODEL },
-    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'google/gemma-3-4b-it:free' },
-    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'meta-llama/llama-3.2-3b-instruct:free' },
+    // Los dos ids :free anteriores (google/gemma-3-4b-it:free y
+    // meta-llama/llama-3.2-3b-instruct:free) ya no existen en OpenRouter, asi
+    // que la cascada de fallback tenia sus dos escalones rotos: cuando Groq
+    // fallaba no habia respaldo, solo dos 404 y el fallback de config.
+    // Reemplazos verificados contra /api/v1/models.
+    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'google/gemma-4-31b-it:free' },
+    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'nvidia/nemotron-3.5-lightning:free' },
   ].filter(Boolean);
 
   for (const provider of llmProviders) {

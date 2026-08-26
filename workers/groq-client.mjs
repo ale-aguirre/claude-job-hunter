@@ -6,7 +6,9 @@
 
 const GROQ_KEY  = process.env.GROQ_API_KEY || '';
 const GROQ_BASE = 'https://api.groq.com/openai/v1/chat/completions';
-const MODEL_FAST  = 'llama-3.1-8b-instant';
+// Ni llama-3.1-8b-instant ni llama-3.3-70b sobrevivieron: el catalogo de Groq
+// hoy es gpt-oss, qwen3 y compound. Verificado contra /v1/models.
+const MODEL_FAST  = process.env.GROQ_FAST_MODEL || 'openai/gpt-oss-20b';
 // Groq dio de baja llama-3.3-70b-versatile (aviso del 2026-07-02). El reemplazo
 // ya estaba puesto en anthropic-client.mjs pero quedó sin propagar acá, en
 // profile-extractor, cold-email y scout-api: cuatro archivos pidiendo un modelo
