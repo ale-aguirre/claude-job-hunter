@@ -81,7 +81,13 @@ async function check(r) {
     const body = (await res.text()).toLowerCase().slice(0, 60000);
     const closed = ['no longer accepting', 'position has been filled', 'job not found',
       'this job is closed', 'no longer available', 'posting is closed',
+      // Greenhouse dice "no longer OPEN", que no matcheaba ninguna de las de
+      // arriba, y ademas redirige al listado de la empresa con ?error=true en vez
+      // de dar 404. Doble disfraz: HTTP 200 y una frase parecida pero distinta.
+      // Por eso 21 avisos cerrados llegaron hasta el applier y se comieron cupos.
+      'no longer open', 'job you are looking for is no longer',
       'ya no está disponible', 'búsqueda cerrada'];
+    if (/[?&]error=true/.test(res.url)) return 'muerta';
     return closed.some(s => body.includes(s)) ? 'muerta' : 'viva';
   } catch {
     return 'incierta';

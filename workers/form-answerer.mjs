@@ -281,8 +281,25 @@ export function classifyField(field, job) {
 
   // Country / location questions. Ashby's system location field is literally
   // just labelled "Location" — confirmed live on Braintrust/g2i, both required.
-  if (/country of residence|located in|country\b.*located|which country|currently based|^location$/i.test(low.trim())) {
-    return { kind: 'option', value: 'Argentina', fallback: CATCHALL_OPTION_RE };
+  //
+  // Dos cosas mas, aprendidas el 31/8 mirando el formulario real de CopilotKit
+  // en Lever, donde este campo abortaba la postulacion con "unanswerable":
+  //
+  // 1. La etiqueta no siempre es "Location" a secas. Ahi era "Current location",
+  //    y ^location$ no matchea eso. Peor: el label que llega trae pegado el
+  //    mensaje del propio autocompletar ("Current location No location found.
+  //    Try entering a..."), asi que hay que buscar la frase DENTRO del label en
+  //    vez de exigir que el label sea la frase.
+  //
+  // 2. Un input de texto con autocompletar de CIUDADES no entiende "Argentina".
+  //    Si el control es texto libre hay que escribir la ciudad; si es un select
+  //    o un combobox de paises, la opcion correcta es el pais. El codigo mandaba
+  //    "Argentina" en los dos casos, y en Lever eso devolvia literalmente
+  //    "No location found", que era el texto visible en la pantalla.
+  if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b/i.test(low)) {
+    const esTextoLibre = field.type === 'text' || field.type === 'textarea';
+    if (esTextoLibre && PROFILE.city) return { kind: 'text', value: PROFILE.city };
+    return { kind: 'option', value: 'Argentina', fallback: CATCHALL_OPTION_RE, typeHint: PROFILE.city || 'Argentina' };
   }
 
   // "Have you worked at / consulted for <company>" — truthful deterministic No,

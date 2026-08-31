@@ -314,9 +314,18 @@ for (const target of targets) {
         new Promise(r => setTimeout(() => r(null), 10000)),
       ]);
       if (!href) {
-        // Un solo log consolidado por job cuando falla
-        log('blocked', `${target.company} | ${target.title} — no form/button at ${currentUrl.slice(0,60)}`, 'warn');
-        markResult(db, target, 'found', `BLOCKED: No form or Apply button found at ${currentUrl}`);
+        // Greenhouse no da 404 para un aviso cerrado: redirige al listado de la
+        // empresa con ?error=true y responde 200. Sin distinguirlo, tres avisos
+        // vencidos quedaron registrados como "no encontro formulario", que
+        // manda a buscar un bug de scraping donde no hay ninguno. El motivo
+        // importa: uno se arregla con codigo y el otro con correr check-alive.
+        const avisoCerrado = /[?&]error=true/.test(currentUrl);
+        const motivo = avisoCerrado
+          ? `BLOCKED: Job closed/expired — Greenhouse redirigio a ${currentUrl}`
+          : `BLOCKED: No form or Apply button found at ${currentUrl}`;
+        log(avisoCerrado ? 'job_closed' : 'blocked',
+          `${target.company} | ${target.title} — ${avisoCerrado ? 'expired/closed (redirect Greenhouse)' : 'no form/button at ' + currentUrl.slice(0, 60)}`, 'warn');
+        markResult(db, target, 'found', motivo);
         blocked++; continue;
       }
       await Promise.race([
