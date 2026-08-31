@@ -29,6 +29,7 @@ import { esperarCodigoDeSeguridad } from './inbox-code.mjs';
 
 // ── Constants / policy ───────────────────────────────────────────────────────
 export const SALARY_ANSWER = 'USD 4000 gross monthly, flexible';
+export const START_DATE_ANSWER = process.env.START_DATE_ANSWER || '1 month (notice period)';
 
 // Voluntary self-identification (EEO) — never answered by this system, ever,
 // required or not. If the ATS offers a "decline to answer" option it is used;
@@ -275,6 +276,15 @@ export function classifyField(field, job) {
   if (/github/i.test(low)) return PROFILE.github ? { kind: 'text', value: PROFILE.github } : { kind: 'skip', reason: 'no github in profile' };
   if (/portfolio|personal website/i.test(low)) return PROFILE.portfolio ? { kind: 'text', value: PROFILE.portfolio } : { kind: 'skip', reason: 'no portfolio in profile' };
   if (/^city$/i.test(low.trim())) return PROFILE.city ? { kind: 'text', value: PROFILE.city } : { kind: 'skip', reason: 'no city in profile' };
+
+  // Fecha de inicio / preaviso. Alexis esta en relacion de dependencia, asi que
+  // "immediately" seria falso: hay preaviso real que cumplir. Un mes es el plazo
+  // estandar y no compromete a nada imposible; si en una busqueda puntual puede
+  // antes, se negocia en la entrevista, que es donde corresponde.
+  // Cambiar con START_DATE_ANSWER en .env sin tocar este archivo.
+  if (/earliest (start|possible start) date|when (can|could) you start|notice period|available to start|start date/i.test(low)) {
+    return { kind: 'text', value: START_DATE_ANSWER, optionFallback: START_DATE_ANSWER };
+  }
 
   // "How did you hear about us" — deterministic per repo rules.
   if (/how did you (hear|find out|come across)/i.test(low)) return { kind: 'option', value: 'LinkedIn', fallback: 'Job board' };

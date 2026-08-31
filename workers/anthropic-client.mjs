@@ -20,7 +20,12 @@ const SONNET_MODEL   = 'claude-sonnet-4-6';
 // qwen3.6-27b it does not emit a <think> block that has to be stripped.
 // Override with GROQ_MODEL in .env without touching this file.
 const GROQ_MODEL     = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
-const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'deepseek-r1:8b';
+// deepseek-r1:8b no estaba descargado en esta maquina: el tercer escalon de la
+// cascada pedia un modelo inexistente, igual que los otros dos. De los tres que
+// si estan (dolphin-llama3, qwen2.5:7b-instruct, deepseek-coder:6.7b-instruct)
+// qwen2.5 es el que mejor devuelve JSON limpio, que es lo unico que se le pide
+// aca. Verificado contra el Ollama local.
+const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct';
 const OLLAMA_BASE    = process.env.OLLAMA_BASE  || 'http://localhost:11434';
 
 // ── Anthropic Sonnet (orchestration primary) ─────────────────────────────────
@@ -60,10 +65,10 @@ async function callGroqRaw(system, user, maxTokens = 1500) {
   // bloqueada por algo que se resolvia esperando medio minuto. El 31/8 una tanda
   // de seis se perdio asi.
   //
-  // La espera vale doble porque abajo no hay red: esta instalacion tiene una
-  // sola clave (Groq). Anthropic no esta configurada y Ollama no corre, asi que
-  // los dos escalones siguientes de esta cascada no existen y un 429 sin
-  // reintento es el final del camino.
+  // Igual conviene esperar antes de bajar un escalon: Anthropic no esta
+  // configurada en esta instalacion, asi que el unico respaldo real es el Ollama
+  // local, que corre en CPU y tarda bastante mas que Groq. Reintentar sale mas
+  // barato que caer al modelo chico.
   const pedir = () => fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
