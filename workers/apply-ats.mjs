@@ -416,7 +416,19 @@ for (const target of targets) {
       markResult(db, target, 'applied', `CONFIRMED at ${outcome.proof.finalUrl} | screenshot: ${outcome.proof.screenshotPath}`);
       applied++;
     } else {
-      const errSummary = (outcome.fieldErrors || []).slice(0, 5).map(e => e.label || e.error).join(' | ');
+      // Lever contesta "File exceeds the maximum upload size of 100MB" cuando un
+      // campo de archivo quedo vacio. El 31/8 eso salio con un CV de 74 KB, o
+      // sea el mensaje del board es directamente falso y manda a buscar el
+      // problema en el tamano del PDF, que es donde no esta. El CV principal se
+      // habia subido bien; lo que faltaba era un segundo input de archivo, sin
+      // etiqueta, de una tarjeta propia de la empresa. No se completa solo a
+      // proposito: no se adivina que archivo pide un campo que no dice que pide.
+      const errSummary = (outcome.fieldErrors || []).slice(0, 5).map(e => {
+        const txt = e.label || e.error || '';
+        return /exceeds the maximum upload size/i.test(txt)
+          ? `${txt} [el board miente: hay un campo de archivo adicional sin completar, el CV se subio bien]`
+          : txt;
+      }).join(' | ');
       log('blocked', `${target.company} | ${target.title} — ${outcome.reason}${errSummary ? ' | fields: ' + errSummary : ''}`, 'warn');
       markResult(db, target, 'found', `BLOCKED: ${outcome.reason}${errSummary ? ' | fields: ' + errSummary : ''}`);
       blocked++;
