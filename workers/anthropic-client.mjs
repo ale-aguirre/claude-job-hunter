@@ -54,7 +54,17 @@ async function callAnthropicRaw(system, user, maxTokens = 2000) {
 // ── Groq llama-3.3-70b (simple tasks primary / smart fallback) ───────────────
 async function callGroqRaw(system, user, maxTokens = 1500) {
   return spanLLM({ provider: 'groq', model: GROQ_MODEL }, async () => {
-  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  // Un 429 de Groq es temporal: el free tier limita por minuto y se libera solo.
+  // Sin esperar, una corrida del applier lo tomaba como "el modelo no contesto"
+  // y dejaba cada pregunta abierta sin responder, o sea la postulacion entera
+  // bloqueada por algo que se resolvia esperando medio minuto. El 31/8 una tanda
+  // de seis se perdio asi.
+  //
+  // La espera vale doble porque abajo no hay red: esta instalacion tiene una
+  // sola clave (Groq). Anthropic no esta configurada y Ollama no corre, asi que
+  // los dos escalones siguientes de esta cascada no existen y un 429 sin
+  // reintento es el final del camino.
+  const pedir = () => fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -72,6 +82,15 @@ async function callGroqRaw(system, user, maxTokens = 1500) {
     }),
     signal: AbortSignal.timeout(60000),
   });
+
+  let r = await pedir();
+  for (let intento = 1; r.status === 429 && intento <= 3; intento++) {
+    const sugerido = parseFloat(r.headers.get('retry-after') || '0');
+    const espera = Math.min(Math.max(sugerido * 1000 || intento * 15000, 5000), 60000);
+    console.warn(`[llm] Groq 429 — esperando ${Math.round(espera / 1000)}s (intento ${intento}/3)`);
+    await new Promise(res => setTimeout(res, espera));
+    r = await pedir();
+  }
   if (!r.ok) throw new Error(`Groq ${r.status}: ${(await r.text()).slice(0, 100)}`);
   const d = await r.json();
   const choice = d.choices?.[0];
