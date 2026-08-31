@@ -46,11 +46,37 @@ const EXCLUDE_KEYWORDS = profileKw.excludeTerms || [];
 // "Engineering Manager, AI Engineering: Chat" — not this candidate's role).
 const ROLE_EXCLUDE_RE = /\b(manager|director|vp\b|head of|chief\b|staff\b|principal\b)\b/i;
 
-function isRelevantTitle(title = '') {
+/**
+ * El score ya es el juicio de relevancia del sistema: lo calcula scoreJob() en
+ * rules.mjs, que mira titulo, notas, plataforma y ubicacion con matching por
+ * palabra. Exigir ADEMAS que el titulo contenga literalmente una keyword del
+ * perfil es pedir la misma prueba dos veces, con el metodo peor de los dos.
+ *
+ * Lo que costaba, medido el 31/8 sobre la cola real:
+ *   11pts "Full-Stack Engineer, AI Agent Platform"  descartado: la keyword es
+ *         "full stack" con espacio y el titulo trae guion
+ *   10pts "AI Automation Engineer & Architect"      descartado
+ *    9pts "Senior Software Engineer - AI Interaction Evaluation"  descartado
+ * y el applier terminaba postulando a avisos de 3 y 6 puntos teniendo esos.
+ *
+ * Es el mismo error que el scout tenia en isRelevant y que ya se corrigio: una
+ * preferencia usada como requisito. Ahora la keyword solo decide sobre los
+ * avisos que el scoring dejo abajo; arriba de 5 manda el score.
+ *
+ * ROLE_EXCLUDE_RE queda como veto duro en los dos caminos: es la unica regla
+ * que no depende del cache de keywords generado por el LLM.
+ */
+const SCORE_CONFIABLE = 5;
+
+function isRelevantTitle(title = '', score = 0) {
   const t = title.toLowerCase();
   if (ROLE_EXCLUDE_RE.test(t)) return false;
   if (EXCLUDE_KEYWORDS.some(k => t.includes(k.toLowerCase()))) return false;
-  return APPLY_KEYWORDS.some(k => t.includes(k.toLowerCase()));
+  if (score >= SCORE_CONFIABLE) return true;
+  // Guiones y barras separan palabras igual que un espacio: sin esto,
+  // "Full-Stack" no matchea la keyword "full stack".
+  const normalizado = t.replace(/[-/_]+/g, ' ');
+  return APPLY_KEYWORDS.some(k => normalizado.includes(k.toLowerCase().replace(/[-/_]+/g, ' ')));
 }
 
 // ── Location filter ───────────────────────────────────────────────────────────
@@ -162,7 +188,7 @@ const allDbJobs = db.prepare(`
 // sólo se imprimía el total.
 let fueraPorRol = 0, fueraPorCupoEmpresa = 0;
 const dbJobs = allDbJobs.filter(j => {
-  if (!isRelevantTitle(j.title)) { fueraPorRol++; return false; }
+  if (!isRelevantTitle(j.title, j.score)) { fueraPorRol++; return false; }
   if (alreadyAppliedToday(j.company)) { fueraPorCupoEmpresa++; return false; }
   return true;
 });
