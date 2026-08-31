@@ -303,9 +303,24 @@ export function classifyField(field, job) {
     return { kind: 'option', value: 'No' };
   }
 
-  // Work authorization — only answerable when explicitly about Argentina.
+  // Work authorization. Misma logica que sponsorship, que estaba doce lineas mas
+  // arriba resuelta de otra forma: si la pregunta nombra OTRO pais, decide un
+  // humano; si habla del pais de residencia del candidato sin nombrar ninguno,
+  // resuelve a Argentina, que es donde vive y donde obviamente puede trabajar.
+  //
+  // Estaban desalineadas y eso costaba postulaciones: el 31/8, TRM Labs pregunto
+  // "Are you legally authorized to work in your current country of residence?",
+  // que no nombra ningun pais, y la corrida se aborto pidiendo intervencion
+  // humana para una pregunta cuya respuesta es la residencia declarada en el
+  // propio perfil. No es una politica nueva: es la que el repo ya tenia escrita
+  // para sponsorship, aplicada tambien aca.
   if (AUTH_RE.test(low)) {
     if (/argentina/i.test(low)) return { kind: 'option', value: 'Yes' };
+    const nombraOtroPais = /(united states|u\.?s\.?a?\.?|uk|united kingdom|canada|australia|germany|netherlands|ireland|europe|eu)/i.test(low);
+    if (nombraOtroPais) return { kind: 'abort', reason: `requiere respuesta humana: ${label}` };
+    if (/current (country|location)|country of residence|your country|where you (live|reside)/i.test(low)) {
+      return { kind: 'option', value: 'Yes' };
+    }
     return { kind: 'abort', reason: `requiere respuesta humana: ${label}` };
   }
 
