@@ -14,11 +14,16 @@ import 'dotenv/config';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { getProfileKeywords } from './profile-extractor.mjs';
+import { limpiarDescripcion } from './db-utils.mjs';
 
 const require  = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
 
 const db       = new Database(fileURLToPath(new URL('applications.db', import.meta.url)));
+// Este worker abre su propia conexion (no pasa por openDB() de db-utils.mjs),
+// asi que la migracion de la columna description tiene que correr tambien
+// aca para no depender del orden en que se ejecuten los demas workers.
+try { db.exec(`ALTER TABLE applications ADD COLUMN description TEXT DEFAULT ''`); } catch {}
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
 const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
@@ -235,8 +240,8 @@ async function validateUrl(url, timeout = 3000) {
 
 // ─── DB helpers ────────────────────────────────────────────────────────────
 const insertStmt = db.prepare(`
-  INSERT OR IGNORE INTO applications (company,title,url,source,status,notes,platform,posted_at)
-  VALUES (?,?,?,?,?,?,?,?)
+  INSERT OR IGNORE INTO applications (company,title,url,source,status,notes,platform,posted_at,description)
+  VALUES (?,?,?,?,?,?,?,?,?)
 `);
 const updateStmt = db.prepare(`
   UPDATE applications SET notes=?, updated_at=datetime('now') WHERE url=? AND status='found'
@@ -257,7 +262,7 @@ function isSpecificJobUrl(url) {
   return !CAREER_PAGE_PATTERNS.some(p => p.test(url));
 }
 
-function upsertJob(company, title, url, platform, notes, postedAt = null) {
+function upsertJob(company, title, url, platform, notes, postedAt = null, description = '') {
   if (!url || !url.startsWith('http')) return false;
   if (!isSpecificJobUrl(url)) return false;
   if (EXCLUDE_COMPANIES.has((company || '').trim().toLowerCase())) return false;
@@ -274,7 +279,7 @@ function upsertJob(company, title, url, platform, notes, postedAt = null) {
     return false;
   }
   // source = el board concreto. 'API' a secas escondía de dónde salió cada lead.
-  insertStmt.run(company, title, url, platform || 'API', 'found', notes, platform, postedAt);
+  insertStmt.run(company, title, url, platform || 'API', 'found', notes, platform, postedAt, limpiarDescripcion(description));
   return true;
 }
 
@@ -299,7 +304,7 @@ async function scrapeRemotive() {
         ].filter(Boolean).join(' | ');
         if (!isRelevant(job.title, job.tags || [], notes)) continue;
         const postedAt = job.publication_date || job.created_at || null;
-        if (upsertJob(job.company_name, job.title, job.url, 'remotive', notes, postedAt)) count++;
+        if (upsertJob(job.company_name, job.title, job.url, 'remotive', notes, postedAt, job.description)) count++;
       }
     } catch { /* skip */ }
     await new Promise(r => setTimeout(r, 500));
@@ -325,7 +330,7 @@ async function scrapeRemoteOK() {
       }
       const url = job.url.startsWith('http') ? job.url : `https://remoteok.com${job.url}`;
       const postedAt = job.date || null;
-      if (upsertJob(job.company || 'Unknown', job.position, url, 'remoteok', notes, postedAt)) count++;
+      if (upsertJob(job.company || 'Unknown', job.position, url, 'remoteok', notes, postedAt, job.description)) count++;
     }
   } catch { /* skip */ }
   console.log(`  RemoteOK: +${count} new`);
@@ -358,7 +363,8 @@ async function scrapeGreenhouse() {
   let count = 0;
   for (const board of GREENHOUSE_BOARDS) {
     try {
-      const r = await fetch(`https://boards-api.greenhouse.io/v1/boards/${board}/jobs`);
+      // ?content=true: el listado sin este param no trae el cuerpo del aviso.
+      const r = await fetch(`https://boards-api.greenhouse.io/v1/boards/${board}/jobs?content=true`);
       if (!r.ok) continue;
       const d = await r.json();
       for (const job of (d.jobs || [])) {
@@ -372,7 +378,7 @@ async function scrapeGreenhouse() {
         const url   = `https://boards.greenhouse.io/${board}/jobs/${job.id}`;
         const notes = `Greenhouse/${board} | ${job.location?.name || 'Remote'}`;
         const postedAt = job.updated_at || null;
-        if (upsertJob(board, job.title, url, 'greenhouse', notes, postedAt)) count++;
+        if (upsertJob(board, job.title, url, 'greenhouse', notes, postedAt, job.content)) count++;
       }
     } catch { /* skip */ }
     await new Promise(r => setTimeout(r, 200));
@@ -421,7 +427,7 @@ async function scrapeAshby() {
         const url   = job.jobUrl || job.jobPostingUrl || `https://jobs.ashbyhq.com/${board}/${job.id}`;
         const notes = `Ashby/${board} | ${job.location || 'Remote'} | ${job.employmentType || ''}`;
         const postedAt = job.publishedAt || job.updatedAt || null;
-        if (upsertJob(board, job.title, url, 'ashby', notes, postedAt)) count++;
+        if (upsertJob(board, job.title, url, 'ashby', notes, postedAt, job.descriptionPlain)) count++;
       }
     } catch { /* skip */ }
     await new Promise(r => setTimeout(r, 150));
@@ -504,7 +510,7 @@ async function scrapeHimalayas() {
         ].filter(Boolean).join(' | ');
 
         const postedAt = job.pubDate ? new Date(job.pubDate * 1000).toISOString() : null;
-        if (upsertJob(company, title, link, 'himalayas', notes, postedAt)) count++;
+        if (upsertJob(company, title, link, 'himalayas', notes, postedAt, job.description)) count++;
       }
       if (!cursor) break;
       await new Promise(res => setTimeout(res, 400));
@@ -623,7 +629,7 @@ async function scrapeTheMuse() {
       if (!url) continue;
       const notes = `TheMuse | ${(job.locations || []).map(l => l.name).join(', ') || 'Remote'}`;
       if (!isRelevant(job.name || '', [], notes)) continue;
-      if (upsertJob(job.company?.name || 'Unknown', job.name, url, 'themuse', notes)) count++;
+      if (upsertJob(job.company?.name || 'Unknown', job.name, url, 'themuse', notes, null, job.contents)) count++;
     }
   } catch { /* skip */ }
   console.log(`  TheMuse: +${count} new`);
@@ -666,7 +672,7 @@ async function scrapeJobicy() {
         const notes = `Jobicy | ${job.jobType || ''} | ${job.jobGeo || 'Remote'}${job.annualSalaryMin ? ` | $${job.annualSalaryMin}-${job.annualSalaryMax}` : ''}`;
         if (!isRelevant(job.jobTitle || '', job.jobIndustry || [], notes)) continue;
         const postedAt = job.pubDate || null;
-        if (upsertJob(job.companyName || 'Unknown', job.jobTitle, url, 'jobicy', notes, postedAt)) count++;
+        if (upsertJob(job.companyName || 'Unknown', job.jobTitle, url, 'jobicy', notes, postedAt, job.jobDescription)) count++;
       }
     } catch { /* skip */ }
     await new Promise(r => setTimeout(r, 400));
@@ -924,7 +930,7 @@ async function scrapeHNWhoIsHiring() {
         const postedAt = c.time ? new Date(c.time * 1000).toISOString() : null;
         const notes = `HN Who is Hiring | ${parts.slice(1, 4).join(' | ').slice(0, 100)}`;
 
-        if (upsertJob(company, title, jobUrl, 'hn-hiring', notes, postedAt)) count++;
+        if (upsertJob(company, title, jobUrl, 'hn-hiring', notes, postedAt, c.text)) count++;
       }
       await new Promise(r => setTimeout(r, 200));
     }

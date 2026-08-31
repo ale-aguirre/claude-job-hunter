@@ -14,7 +14,28 @@ export function openDB() {
   db.pragma('synchronous = NORMAL');
   db.pragma('cache_size = -64000');
   db.pragma('temp_store = MEMORY');
+  // Migracion de la base existente (1800+ filas). Guardada asi para que corra
+  // una sola vez y desde cualquier worker que abra la DB por este helper.
+  try { db.exec(`ALTER TABLE applications ADD COLUMN description TEXT DEFAULT ''`); } catch {}
   return db;
+}
+
+/**
+ * Limpia una descripcion de aviso antes de guardarla: saca tags HTML, decodifica
+ * las entidades mas comunes y colapsa espacios/saltos de linea repetidos. Se usa
+ * en upsertJob para que la columna description no arrastre markup crudo de las
+ * APIs (Greenhouse y Ashby, sobre todo, devuelven HTML).
+ */
+export function limpiarDescripcion(txt) {
+  if (!txt) return '';
+  const ENTITIES = {
+    '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"',
+    '&#39;': "'", '&#x27;': "'", '&#x2F;': '/', '&nbsp;': ' ',
+  };
+  let out = String(txt).replace(/<[^>]+>/g, ' ');
+  out = out.replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&#x27;|&#x2F;|&nbsp;/g, m => ENTITIES[m]);
+  out = out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').replace(/ *\n */g, '\n').trim();
+  return out.slice(0, 6000);
 }
 
 /**
@@ -35,7 +56,7 @@ export function logDB(db, agent, action, detail = '', status = 'ok') {
  * Upsert an application record (insert if not exists, skip if exists).
  * Returns true if inserted.
  */
-export function upsertJob(db, { company, title, url, source, status = 'found', notes = '', platform = '' }) {
+export function upsertJob(db, { company, title, url, source, status = 'found', notes = '', platform = '', description = '' }) {
   if (!url?.startsWith('http')) return false;
   // Dedup by URL first
   const byUrl = db.prepare('SELECT id FROM applications WHERE url=?').get(url);
@@ -50,8 +71,8 @@ export function upsertJob(db, { company, title, url, source, status = 'found', n
     if (byNameCompany) return false;
   }
   db.prepare(
-    'INSERT INTO applications (company,title,url,source,status,notes,platform) VALUES (?,?,?,?,?,?,?)'
-  ).run(company, title, url, source, status, notes, platform);
+    'INSERT INTO applications (company,title,url,source,status,notes,platform,description) VALUES (?,?,?,?,?,?,?,?)'
+  ).run(company, title, url, source, status, notes, platform, limpiarDescripcion(description));
   return true;
 }
 

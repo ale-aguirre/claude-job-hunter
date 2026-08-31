@@ -31,7 +31,8 @@ db.exec(`
     platform     TEXT DEFAULT '',
     pay_hr       REAL DEFAULT 0,
     pay_mo       REAL DEFAULT 0,
-    posted_at    TEXT DEFAULT ''
+    posted_at    TEXT DEFAULT '',
+    description  TEXT DEFAULT ''
   );
 
   CREATE TABLE IF NOT EXISTS agent_log (

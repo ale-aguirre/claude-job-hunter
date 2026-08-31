@@ -56,7 +56,10 @@ function buildIndexes(facts) {
 
 // ── LLM call — extrae selección JSON ─────────────────────────────────────────
 export async function callTailorLLM(facts, job, role, lang) {
-  const jd = (job.notes || '').slice(0, 900);
+  // Fallback a notes: los avisos cargados antes de esta migracion no tienen
+  // description, y las fuentes que no la proveen (Lever, Contra, Torre, etc.)
+  // tampoco. Sin el fallback, esos jobs quedarian sin JD para el LLM.
+  const jd = (job.description || job.notes || '').slice(0, 3500);
 
   // Compact skill list para el prompt
   const skillList = facts.skills.map(s => `${s.id}:${s.label}`).join(', ');
