@@ -92,11 +92,37 @@ const LATAM_OK_RE = /argentina|latam|latin america|am[eé]rica latina|\bamericas
 async function prefetchText(url) {
   try {
     const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(8000) });
-    if (!r.ok) return '';
+    if (!r.ok) return { texto: '', cerrado: false };
     const html = await r.text();
-    return html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
+    const texto = html.replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '')
       .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1500);
-  } catch { return ''; }
+    // Greenhouse redirige al listado de la empresa cuando el aviso cerro, con
+    // HTTP 200. Detectarlo ACA importa: el filtro de ubicacion corre antes que
+    // nada y, sin esto, terminaba leyendo el listado y sacando de ahi una
+    // "ubicacion". Con Remote.com el parrafo que agarro decia que las
+    // ubicaciones publicadas son solo publicitarias, y con eso bloqueo por pais
+    // un aviso titulado "Anywhere in the World". Dos veces el motivo equivocado.
+    return { texto, cerrado: /[?&]error=true/.test(r.url) };
+  } catch { return { texto: '', cerrado: false }; }
+}
+
+/**
+ * Una ubicacion es una lista corta de lugares, no un parrafo. Si lo que se
+ * extrajo tiene largo de prosa o termina oraciones, el extractor agarro
+ * cualquier cosa y bloquear con eso es peor que no filtrar: descarta avisos
+ * buenos por un texto que nunca fue una ubicacion.
+ */
+// Palabras que aparecen en prosa y nunca en una linea de ubicacion. El corte por
+// largo solo no alcanzaba: el parrafo de Remote.com entraba en 118 caracteres.
+const PROSA_RE = /\b(the|you|your|are|is|was|we|our|us|please|check|only|often|means|which|that|under|about|see)\b/i;
+
+function pareceUbicacion(txt) {
+  if (!txt) return false;
+  const limpio = txt.trim();
+  if (limpio.length > 120) return false;
+  if (limpio.split(/\s+/).length > 12) return false;   // una ubicacion son pocas palabras
+  if (PROSA_RE.test(limpio)) return false;
+  return true;
 }
 
 /** Pulls the location line out of a normalized (single-spaced) page text blob. */
@@ -244,11 +270,22 @@ for (const target of targets) {
   console.log(`\n→ ${target.company} | ${target.title}\n  ${target.url}`);
 
   // ── Location filter — server-rendered ATS: skip WITHOUT opening the browser tab.
-  const preText = await prefetchText(target.url);
+  const { texto: preText, cerrado } = await prefetchText(target.url);
+  if (cerrado) {
+    log('job_closed', `${target.company} | ${target.title} — expired/closed (redirect Greenhouse)`, 'warn');
+    markResult(db, target, 'found', `BLOCKED: Job closed/expired — Greenhouse redirigio al listado de la empresa`);
+    blocked++; continue;
+  }
   const isJsShell = !preText || /enable javascript/i.test(preText);
   if (!isJsShell) {
     const loc = extractLocationText(preText, (target.title || "").trim());
-    const elig = isLocationEligible(loc);
+    // Si lo extraido no parece una ubicacion, no se bloquea: el aviso sigue su
+    // camino y mas adelante se vuelve a mirar la ubicacion con la pagina ya
+    // renderizada. Bloquear con un texto que no era una ubicacion descarta
+    // avisos buenos y encima lo registra con el motivo equivocado.
+    const elig = pareceUbicacion(loc)
+      ? isLocationEligible(loc)
+      : { ok: true, reason: 'texto extraido no parece una ubicacion — no se bloquea acá' };
     if (!elig.ok) {
       log('skipped_location', `${target.company} | ${target.title} — ${elig.reason}`, 'warn');
       markResult(db, target, 'found', `BLOCKED: ${elig.reason}`);
