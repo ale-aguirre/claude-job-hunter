@@ -370,7 +370,17 @@ for (const target of targets) {
 
 try { await closeBrowser(); } catch {}
 console.log(`\n──────────────────────`);
-console.log(`✅ Applied/submitted: ${applied}`);
+// El mismo contador servia para las tres modalidades, asi que una corrida en
+// seco cerraba con "Applied/submitted: 3" sin haber enviado nada. Leer esa
+// linea y creerle es exactamente el error que este proyecto viene arreglando en
+// todos lados: un numero que parece un resultado y no lo es.
+if (DRY_RUN) {
+  console.log(`🧪 Formularios completados SIN enviar: ${applied}  (dry-run: no se postulo a nada)`);
+} else if (FILL_CHECK) {
+  console.log(`🧪 Formularios completados SIN enviar: ${applied}  (fill-check: no se postulo a nada)`);
+} else {
+  console.log(`✅ Applied/submitted: ${applied}`);
+}
 console.log(`🚫 Blocked (reason in DB): ${blocked}`);
 console.log(`⏭  Already done: ${skipped}`);
 console.log(`🌎 Filtered out (role/location): ${filteredOut}`);
