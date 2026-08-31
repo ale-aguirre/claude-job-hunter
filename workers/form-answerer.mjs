@@ -25,6 +25,7 @@ import { callFast } from './anthropic-client.mjs';
 import { spanTask } from './telemetry.mjs';
 import { getFacts } from './cv-tailor.mjs';
 import { clickSubmit, verifySubmission } from './form-utils.mjs';
+import { esperarCodigoDeSeguridad } from './inbox-code.mjs';
 
 // ── Constants / policy ───────────────────────────────────────────────────────
 export const SALARY_ANSWER = 'USD 4000 gross monthly, flexible';
@@ -777,6 +778,78 @@ export async function scanFieldErrors(page) {
   });
 }
 
+// ── 8b. Greenhouse email security-code challenge ─────────────────────────────
+/**
+ * Greenhouse a veces no rebota el submit con campos en rojo sino con un
+ * campo de "security code" que exige el código que te manda por email.
+ * Confirmado el 26/8 contra Webflow: el applier no leía ese correo y
+ * reintentaba a ciegas — seis códigos pedidos ese día, ninguno usado nunca.
+ * Detecta si la página está pidiendo ese código ahora mismo.
+ */
+async function detectarCampoCodigoSeguridad(page) {
+  return page.evaluate(() => {
+    const texto = document.body.innerText || '';
+    if (!/security code/i.test(texto)) return null;
+
+    const candidatos = Array.from(document.querySelectorAll(
+      'input[type="text"], input:not([type]), input[type="tel"], input[type="number"]'
+    ));
+    const match = candidatos.find(el => {
+      const lbId = el.getAttribute('aria-labelledby');
+      const props = [
+        el.id, el.name, el.placeholder, el.getAttribute('aria-label'),
+        el.closest('label')?.textContent,
+        lbId ? lbId.split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ') : '',
+      ].filter(Boolean).join(' ');
+      return /security.?code|verification.?code/i.test(props);
+    });
+    if (!match) return null;
+    if (match.id) return { by: 'id', value: match.id };
+    if (match.name) return { by: 'name', value: match.name };
+    return null;
+  });
+}
+
+/** Escapa un id para usarlo como selector CSS (Playwright no lo hace solo). */
+function escaparCssId(id) {
+  return id.replace(/([^a-zA-Z0-9_-])/g, '\\$1');
+}
+
+/**
+ * Espera el código por email, lo escribe en el campo y reenvía. Un solo
+ * intento: si el mail no llega o el reenvío tampoco confirma, se reporta
+ * bloqueado — reintentar a ciegas es exactamente el bug que generó seis
+ * códigos basura el 26/8.
+ */
+async function manejarCodigoDeSeguridad(page, job, antesDeEnviar) {
+  const campo = await detectarCampoCodigoSeguridad(page);
+  if (!campo) {
+    return { status: 'blocked', reason: 'la página pide un código de seguridad pero no se encontró el campo para escribirlo', fieldErrors: [] };
+  }
+
+  console.log(`[form-answerer] ${job.company} pide código de seguridad por email — esperando el mail de Greenhouse...`);
+  const resultado = await esperarCodigoDeSeguridad({ desde: antesDeEnviar, empresa: job.company, timeoutMs: 120000 });
+  if (!resultado.ok) {
+    return { status: 'blocked', reason: `código de seguridad: ${resultado.razon}`, fieldErrors: [] };
+  }
+
+  const selector = campo.by === 'id' ? `#${escaparCssId(campo.value)}` : `[name="${campo.value}"]`;
+  try {
+    await page.locator(selector).first().fill(resultado.codigo);
+  } catch (e) {
+    return { status: 'blocked', reason: `código de seguridad recibido pero no se pudo escribir en el campo: ${e.message.slice(0, 100)}`, fieldErrors: [] };
+  }
+
+  const clicked2 = await clickSubmit(page);
+  if (!clicked2) return { status: 'blocked', reason: 'código de seguridad escrito pero no se encontró el botón de submit para reenviar', fieldErrors: [] };
+
+  const proof = await verifySubmission(page, { company: job.company, originalUrl: job.url });
+  if (proof.confirmed) return { status: 'applied', proof, securityCode: true };
+
+  const fieldErrors = await scanFieldErrors(page);
+  return { status: 'blocked', reason: 'se reenvió con el código de seguridad pero el envío no se confirmó', proof, fieldErrors };
+}
+
 // ── 9. Submit with one retry on validation errors ────────────────────────────
 /**
  * clickSubmit() -> verifySubmission(). If the ATS bounced the submission with
@@ -785,11 +858,20 @@ export async function scanFieldErrors(page) {
  * Never called with a real submit unless the caller explicitly wants LIVE.
  */
 export async function submitWithRetry(page, job) {
+  // Se anota antes de tocar submit: si Greenhouse pide un código de
+  // seguridad, el mail tiene que haber llegado DESPUÉS de este momento —
+  // uno viejo de otra postulación no sirve y usarlo sería peor que fallar.
+  const antesDeEnviar = new Date();
+
   const clicked = await clickSubmit(page);
   if (!clicked) return { status: 'blocked', reason: 'no submit button found', fieldErrors: [] };
 
   let proof = await verifySubmission(page, { company: job.company, originalUrl: job.url });
   if (proof.confirmed) return { status: 'applied', proof };
+
+  if (await detectarCampoCodigoSeguridad(page)) {
+    return manejarCodigoDeSeguridad(page, job, antesDeEnviar);
+  }
 
   let fieldErrors = await scanFieldErrors(page);
   if (fieldErrors.length === 0) return { status: 'blocked', reason: 'submit did not confirm and no red fields found — unverified', proof, fieldErrors };
