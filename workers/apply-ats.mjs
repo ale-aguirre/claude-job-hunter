@@ -2,12 +2,14 @@
  * apply-ats.mjs — Fill ATS forms (Ashby, Lever, Greenhouse, Workable, Personio)
  * Usage: node apply-ats.mjs [--dry-run] [--visible]
  */
+import { basename } from 'path';
 import { getBrowser } from './browser-utils.mjs';
 import { openDB, logDB, markResult } from './db-utils.mjs';
 import { BASE_COVER, CV_PATH } from './config.mjs';
 import { fillForm, uploadCV, clickApplyLink } from './form-utils.mjs';
 import { getProfileKeywords } from './profile-extractor.mjs';
 import { uploadCVRobust, fillAllRequiredFields, submitWithRetry, runFillCheck } from './form-answerer.mjs';
+import { tailorCV } from './cv-tailor.mjs';
 
 const db  = openDB();
 const args = process.argv.slice(2);
@@ -141,7 +143,7 @@ function alreadyAppliedToday(company) {
 // filter.mjs venía calculando y guardando `score` desde siempre y nadie lo leía
 // acá. Un puntaje que no ordena nada es un puntaje que no existe.
 const allDbJobs = db.prepare(`
-  SELECT company, title, url, COALESCE(score, 0) AS score FROM applications
+  SELECT id, company, title, url, description, COALESCE(score, 0) AS score FROM applications
   WHERE status='found'
     -- Todo descarte terminal se escribe con el prefijo BLOCKED:. El filtro de
     -- ubicacion escribia SKIPPED:, que nadie leia: los avisos rechazados por pais
@@ -315,23 +317,47 @@ for (const target of targets) {
       applied++; continue;
     }
 
+    // ── CV adaptado ──────────────────────────────────────────────────────────
+    // Recién acá, con rol/ubicación ya filtrados y el form confirmado, vale la
+    // pena pagar la llamada al LLM y la generación del PDF: un aviso que se
+    // descarta antes de este punto nunca gastó un adaptado. tailorCV hace su
+    // propia validación anti-invención y devuelve null si algo falla (LLM sin
+    // responder, validación rechazada, sin descripción real para ese aviso);
+    // en ese caso cae al estático — postular con el genérico es mejor que no
+    // postular. El nombre subido queda registrado siempre, en cv_used.
+    const tailored = await tailorCV(target);
+    let cvPath = CV_PATH;
+    let cvSource = 'static';
+    if (tailored?.path) {
+      cvPath = tailored.path;
+      cvSource = 'tailored';
+      console.log(`  [cv] adaptado -> ${basename(cvPath)}`);
+    } else {
+      console.log(`  [cv] fallback a estático -> ${basename(cvPath)} (tailorCV devolvió null, ver [cv-tailor] arriba)`);
+    }
+
     if (DRY_RUN) {
       await Promise.race([fillForm(page, BASE_COVER), new Promise(r => setTimeout(r, 8000))]);
       await Promise.race([uploadCV(page),             new Promise(r => setTimeout(r, 5000))]);
       // Un solo log por job en dry-run
-      log('dry_run', `${target.company} | ${target.title} → form found & filled (${target.ats})`);
-      markResult(db, target, 'found', 'DRY RUN: form found and filled');
+      log('dry_run', `${target.company} | ${target.title} → form found & filled (${target.ats}) [cv:${cvSource}]`);
+      markResult(db, target, 'found', `DRY RUN: form found and filled | cv=${cvSource}:${basename(cvPath)}`);
+      if (target.id) db.prepare(`UPDATE applications SET cv_used=? WHERE id=?`).run(cvPath, target.id);
       applied++; continue;
     }
 
     // LIVE: robust CV upload (real filechooser flow) + full required-field
     // answering (deterministic + validated LLM choices) before submitting.
-    const cv = await uploadCVRobust(page, CV_PATH);
+    const cv = await uploadCVRobust(page, cvPath);
     if (!cv.ok) {
       log('blocked', `${target.company} | ${target.title} — CV upload failed: ${cv.reason}`, 'warn');
       markResult(db, target, 'found', `BLOCKED: CV upload failed — ${cv.reason}`);
       blocked++; continue;
     }
+    // Se subió de verdad al form: queda registrado pase lo que pase después
+    // (bloqueo en un campo, submit fallido), para poder comparar más adelante
+    // si el adaptado consigue más respuestas que el estático.
+    if (target.id) db.prepare(`UPDATE applications SET cv_used=? WHERE id=?`).run(cvPath, target.id);
     const fillResult = await fillAllRequiredFields(page, target);
     if (fillResult.aborted) {
       log('blocked', `${target.company} | ${target.title} — ${fillResult.aborted}`, 'warn');

@@ -154,6 +154,14 @@ if (!DRY_RUN) {
   if (deduped > 0) logDB(db, 'filter', 'dedup', `${deduped} skipped by email domain dedup`);
 }
 
-logDB(db, 'filter', 'done', `${scored} ready (${emailFound} with email), ${skipped} skipped, ${deduped} deduped`);
-console.log(`\nfilter: ${scored} ready | ${emailFound} with email | ${skipped} skipped | ${deduped} deduped`);
+// El log de 'done' es lo único que el dashboard y las próximas corridas ven.
+// Antes se escribía igual en --dry-run que en una corrida real: mismos números,
+// mismo aspecto de "544 ready", pero SIN UPDATE de por medio — cero filas
+// tocadas en la base. Eso fue justo lo que pasó el 31/8 con agentic-jobs: una
+// corrida en dry-run quedó logueada como si hubiera scoreado, y los 85 avisos
+// se quedaron en score=0 porque la corrida real nunca se hizo. Prefijar
+// [DRY RUN] es la única diferencia entre "esto pasó" y "esto se simuló".
+const doneDetail = `${DRY_RUN ? '[DRY RUN] ' : ''}${scored} ready (${emailFound} with email), ${skipped} skipped, ${deduped} deduped`;
+logDB(db, 'filter', 'done', doneDetail);
+console.log(`\nfilter: ${DRY_RUN ? '[DRY RUN] ' : ''}${scored} ready | ${emailFound} with email | ${skipped} skipped | ${deduped} deduped`);
 db.close();
