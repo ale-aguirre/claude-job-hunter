@@ -32,8 +32,19 @@ export function limpiarDescripcion(txt) {
     '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"',
     '&#39;': "'", '&#x27;': "'", '&#x2F;': '/', '&nbsp;': ' ',
   };
-  let out = String(txt).replace(/<[^>]+>/g, ' ');
-  out = out.replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&#x27;|&#x2F;|&nbsp;/g, m => ENTITIES[m]);
+  // El orden importa y estaba al reves. Greenhouse devuelve `content` con doble
+  // escape (`&amp;lt;div&amp;gt;`), asi que sacar tags primero no encontraba
+  // ninguno, y el decode posterior resucitaba el HTML dentro del texto ya
+  // "limpio". Se decodifica primero, repitiendo hasta que el texto deje de
+  // cambiar, y recien despues se sacan los tags.
+  const decodificar = t => t.replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&#x27;|&#x2F;|&nbsp;/g, m => ENTITIES[m]);
+  let out = String(txt);
+  for (let i = 0; i < 3; i++) {
+    const antes = out;
+    out = decodificar(out);
+    if (out === antes) break;
+  }
+  out = out.replace(/<[^>]+>/g, ' ');
   out = out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').replace(/ *\n */g, '\n').trim();
   return out.slice(0, 6000);
 }
