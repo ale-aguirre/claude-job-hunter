@@ -57,3 +57,6 @@ workers/evals/r*.json
 
 # Tooling artifacts
 .atl/
+
+# Log de la tarea programada del applier
+workers/applier.log
