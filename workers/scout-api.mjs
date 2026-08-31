@@ -7,7 +7,8 @@
  *
  * Sources:
  *   Remote: Remotive, RemoteOK, Greenhouse, Lever, Himalayas, WeWorkRemotely,
- *           Contra, Torre, Arbeitnow, TheMuse, GetOnBrd, Jobicy, Groq LLM
+ *           Contra, Torre, Arbeitnow, TheMuse, GetOnBrd, Jobicy, Groq LLM,
+ *           Agentic Engineering Jobs (niche: agents/RAG/LLM roles)
  *   Local:  Bumeran (AR), Computrabajo (AR/LATAM), Workana (LATAM freelance)
  */
 import 'dotenv/config';
@@ -986,6 +987,74 @@ async function scrapeJobgether() {
   return count;
 }
 
+// ─── 20. AGENTIC ENGINEERING JOBS (niche: agents/RAG/LLM) ────────────────────
+// Public REST API, OpenAPI 3.1, no API key. Rate limit is 30 req/60s per IP
+// (confirmed 2026-08-31 by reading /api/v1/openapi.json), so requests here go
+// out sequentially with a fixed delay — never in parallel — even though the
+// rest of the sources in FUENTES run concurrently against other domains.
+const AEJ_BASE      = 'https://agentic-engineering-jobs.com/api/v1';
+const AEJ_DELAY_MS  = 2200;  // ~27 req/min, margin under the 30/60s limit
+const AEJ_MAX_PAGES = 10;    // 465 remote listings / 50 per page as of 2026-08-31
+
+/**
+ * ¿Puede postularse Alexis desde Argentina? A diferencia de las otras fuentes,
+ * acá no hay que adivinar a partir de texto libre: la API expone geoRegion,
+ * countries y remoteScope como campos estructurados propios.
+ */
+function isAejEligible(job) {
+  if (job.geoRegion === 'global' || job.geoRegion === 'latam') return true;
+  if (job.remoteScope === 'global') return true;
+  if (Array.isArray(job.countries) && job.countries.includes('AR')) return true;
+  return false;
+}
+
+async function scrapeAgenticJobs() {
+  let count = 0;
+  try {
+    for (let page = 1; page <= AEJ_MAX_PAGES; page++) {
+      const r = await fetch(`${AEJ_BASE}/jobs?locationType=remote&sort=newest&page=${page}`, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'job-hunter-scout/1.0' },
+      });
+      if (r.status === 429) {
+        // Ya nos pasamos del límite documentado — no insistir, cortar la corrida.
+        console.log('  AgenticJobs: 429 rate limited, cortando corrida');
+        break;
+      }
+      if (!r.ok) break;
+      const d = await r.json();
+      const jobs = d.data || [];
+      for (const job of jobs) {
+        const title = job.title || '';
+        const tags  = [...(job.aiInfrastructure || []), ...(job.techStackTags || []), ...(job.agenticFrameworks || [])];
+        if (!isRelevant(title, tags, job.description || '')) continue;
+        if (!isAejEligible(job)) {
+          drop(`geo no elegible (${job.geoRegion || job.remoteScope || 'sin dato'})`, title);
+          continue;
+        }
+        const applyUrl = job.applyMethods?.find(m => m.type === 'url')?.value
+          || `https://agentic-engineering-jobs.com/jobs/${job.slug}`;
+        const salary = (job.salaryMin && job.salaryMax)
+          ? `Salary: ${job.salaryCurrency || 'USD'} ${job.salaryMin}-${job.salaryMax}`
+          : '';
+        const notes = [
+          `AgenticJobs | ${job.location || job.locationType || 'Remote'}`,
+          salary,
+          job.employmentType,
+          job.seniority,
+        ].filter(Boolean).join(' | ');
+        const postedAt = job.postedAt || null;
+        if (upsertJob(job.companyName || 'Unknown', title, applyUrl, 'agentic-jobs', notes, postedAt, job.description)) count++;
+      }
+      const total   = d.meta?.total ?? 0;
+      const perPage = d.meta?.per_page || jobs.length || 50;
+      if (!jobs.length || page * perPage >= total) break;
+      if (page < AEJ_MAX_PAGES) await new Promise(res => setTimeout(res, AEJ_DELAY_MS));
+    }
+  } catch (e) { console.log(`  AgenticJobs: falló (${e.message})`); }
+  console.log(`  AgenticJobs: +${count} new`);
+  return count;
+}
+
 // Google/Indeed/Career discovery moved to scout-browser.mjs (needs real browser, not fetch)
 
 // ─── RUN ──────────────────────────────────────────────────────────────────
@@ -1021,6 +1090,7 @@ const FUENTES = [
   ['workana',         scrapeWorkana],
   ['europeremotely',  scrapeEuropeRemotely],
   ['jobgether',       scrapeJobgether],
+  ['agentic-jobs',    scrapeAgenticJobs],
   // Local LATAM portals — always run (even without city, search nationally)
   ['bumeran',         scrapeBumeran],
   ['computrabajo',    scrapeComputrabajo],
