@@ -123,7 +123,13 @@ Return JSON with this exact shape:
   "keywords_detected": [...]
 }`;
 
-  const raw = await callFast(system, user, 800);
+  // 800 no alcanzaba. El JSON de salida trae un summary de 30 a 45 palabras mas
+  // cuatro listas de ids, y gpt-oss descuenta su razonamiento del mismo
+  // presupuesto: la respuesta se cortaba a mitad del objeto y el parse moria con
+  // "Expected ',' or '}'" o directamente sin llave de cierre. El sintoma no era
+  // un error del modelo sino dos intentos fallidos y caida al CV estatico, o
+  // sea la funcion distintiva del proyecto apagandose sola.
+  const raw = await callFast(system, user, 2000);
 
   // Extrae JSON del response
   const match = raw.match(/\{[\s\S]*\}/);
