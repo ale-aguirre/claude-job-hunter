@@ -576,6 +576,20 @@ export async function uploadCVRobust(page, cvPath) {
     // wait. Poll instead of a single fixed sleep.
     const filename = cvPath.split(/[\\/]/).pop();
     const checkVerified = () => page.evaluate((filename) => {
+      // Primero la fuente autoritativa: el FileList del propio input. Si el
+      // navegador dice que el archivo esta adjunto, esta adjunto, muestre la
+      // pagina lo que muestre.
+      //
+      // Antes esto se resolvia SOLO mirando document.body.innerText, o sea
+      // pidiendole a la pagina que mostrara el nombre del archivo en algun
+      // lado visible. Greenhouse y Ashby lo muestran; Lever no, y la subida
+      // quedaba marcada como fallida con el archivo ya cargado. Asi se perdio
+      // la postulacion a CoinMarketCap el 31/8, y Lever es una de las fuentes
+      // grandes de la cola, no un caso aislado.
+      const input = document.querySelector('[data-fa-cv="1"]');
+      const cargado = input?.files?.[0]?.name || '';
+      if (cargado && (cargado === filename || cargado.includes(filename.replace(/\.pdf$/i, '')))) return true;
+
       const text = document.body.innerText;
       return text.includes(filename) || text.includes(filename.replace(/\.pdf$/i, ''));
     }, filename);
