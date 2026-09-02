@@ -284,6 +284,35 @@ function upsertJob(company, title, url, platform, notes, postedAt = null, descri
     if (ex.status !== 'applied') updateStmt.run(notes, url);
     return false;
   }
+
+  // Segundo dedupe, por empresa + titulo. Este archivo tiene su propio upsertJob
+  // y no usa el de db-utils, que si lo hacia desde siempre: dos implementaciones
+  // de la misma funcion, y la que corre en produccion era la que menos filtra.
+  //
+  // Costo medido el 2/9: 41 duplicados en la cola. Las empresas republican la
+  // misma vacante con un id nuevo, asi que la URL cambia y el dedupe por URL no
+  // ve nada. Tres filas de "gitlab / Senior Backend Engineer" con titulo
+  // identico y tres ids distintos de Greenhouse, tres de "Bluelight Consulting /
+  // React Native Developer", tres de vanta. Postular tres veces al mismo puesto
+  // de la misma empresa no suma nada y ocupa tres cupos de la corrida.
+  //
+  // La lista de titulos genericos es la misma que usa db-utils: son avisos que
+  // por definicion se repiten entre empresas distintas y no deben deduplicarse.
+  const TITULOS_GENERICOS = ['from x bookmark', 'developer (hn who is hiring)', 'virtual assistant'];
+  const tituloLower = (title || '').toLowerCase();
+  if (!TITULOS_GENERICOS.some(g => tituloLower.includes(g))) {
+    const mismo = db.prepare(
+      "SELECT id FROM applications WHERE lower(company)=lower(?) AND lower(title)=lower(?) AND status NOT IN ('dead','archived')"
+    ).get(company, title);
+    if (mismo) {
+      // Se cuenta como descarte con razon propia, igual que el resto: un
+      // duplicado que desaparece sin dejar rastro es justo lo que hizo que estos
+      // 41 pasaran desapercibidos durante meses.
+      drop('duplicado (misma empresa y titulo)', title);
+      return false;
+    }
+  }
+
   // source = el board concreto. 'API' a secas escondía de dónde salió cada lead.
   insertStmt.run(company, title, url, platform || 'API', 'found', notes, platform, postedAt, limpiarDescripcion(description));
   return true;
