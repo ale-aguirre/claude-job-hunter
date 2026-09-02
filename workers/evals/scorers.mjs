@@ -49,12 +49,32 @@ const KNOWN_TECH = [
  * This is the anti-hallucination property. It is the one that matters, because
  * a fabricated skill on a CV is caught in the interview and ends the process.
  */
+/**
+ * ¿El texto menciona el termino como PALABRA, no como pedazo de otra palabra?
+ *
+ * Este es el bug que el README del proyecto documenta —'scala' vive adentro de
+ * 'Scalability'— y estaba tambien aca, en el grader que vigila que el modelo no
+ * invente experiencia. Un aviso en espanol que hablaba de "escalabilidad" hacia
+ * que este scorer acusara al modelo de haberse inventado Scala.
+ *
+ * \b de JavaScript no sirve: no reconoce acentos ni ñ, asi que "diseño" o
+ * "análisis" cortan mal. Se miran los caracteres de alrededor con \p{L}.
+ */
+function mencionaTermino(texto, termino) {
+  const escapado = termino.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![\\p{L}\\d])${escapado}(?![\\p{L}\\d])`, 'u').test(texto);
+}
+
 export function noUndeclaredTech(output) {
   const summary = (output?.before?.summary || '').toLowerCase();
   if (!summary) return { pass: false, score: 0, reason: 'no summary produced' };
 
+  // Matching por palabra, no por substring. Este es el bug que el README del
+  // proyecto documenta —'scala' vive dentro de 'Scalability'— y estaba tambien
+  // aca: un aviso en espanol que hablaba de "escalabilidad" hacia que el grader
+  // acusara al modelo de haber fabricado experiencia en Scala.
   const violations = KNOWN_TECH.filter(term => {
-    if (!summary.includes(term)) return false;
+    if (!mencionaTermino(summary, term)) return false;
     // Allowed if the profile actually declares it.
     return !declaredSkills.some(label => label.includes(term));
   });
@@ -110,15 +130,25 @@ export function roleMatches(output, context) {
 
 /** Assert: summary stays inside the length window the one-page layout needs. */
 export function summaryLength(output) {
-  const n = (output?.before?.summary || '').split(/\s+/).filter(Boolean).length;
+  // Mide `after`, no `before`: lo que se juzga es el documento que se envia a la
+  // empresa, y entre uno y otro corre el piso que impone el sistema. Leyendo
+  // `before` este grader reprobaba al modelo por algo que el sistema ya corrige,
+  // y reportaba "0 words" en casos donde el CV salia completo.
+  const s = output?.after ?? output?.before ?? {};
+  const n = (s.summary || '').split(/\s+/).filter(Boolean).length;
+  const crudo = (output?.before?.summary || '').split(/\s+/).filter(Boolean).length;
+  const nota = crudo !== n ? ` (el modelo dio ${crudo}, el sistema corrigio)` : '';
   return n >= 25 && n <= 45
-    ? { pass: true, score: 1, reason: `${n} words` }
-    : { pass: false, score: 0, reason: `${n} words, want 25-45` };
+    ? { pass: true, score: 1, reason: `${n} words${nota}` }
+    : { pass: false, score: 0, reason: `${n} words, want 25-45${nota}` };
 }
 
 /** Assert: the shape the renderer depends on is present and within bounds. */
 export function shapeValid(output) {
-  const s = output?.before || {};
+  // Idem summaryLength: la forma que importa es la del entregable. El comentario
+  // de arriba ya decia "the shape the renderer depends on", y el renderer recibe
+  // `after`, no `before`.
+  const s = output?.after || output?.before || {};
   const problems = [];
   const skills = s.skill_ids_ordered || [];
   const projects = s.project_ids_ordered || [];

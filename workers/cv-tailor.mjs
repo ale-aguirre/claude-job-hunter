@@ -150,9 +150,9 @@ export function validate(selection, facts, lang) {
   // skill_ids_ordered — el modelo a veces devuelve la lista entera; el layout
   // de una página banca 10 skills y 3 proyectos, así que el sistema recorta
   // aunque el modelo desborde (el modelo puede fallar; el sistema contiene).
-  if ((selection.skill_ids_ordered || []).length > 10) {
-    errors.push(`too many skills (${selection.skill_ids_ordered.length}), trimmed to 10`);
-    selection.skill_ids_ordered = selection.skill_ids_ordered.slice(0, 10);
+  if ((selection.skill_ids_ordered || []).length > MAX_SKILLS) {
+    errors.push(`too many skills (${selection.skill_ids_ordered.length}), trimmed to ${MAX_SKILLS}`);
+    selection.skill_ids_ordered = selection.skill_ids_ordered.slice(0, MAX_SKILLS);
   }
   if ((selection.project_ids_ordered || []).length > 3) {
     errors.push(`too many projects (${selection.project_ids_ordered.length}), trimmed to 3`);
@@ -351,7 +351,11 @@ ${projectsHtml}
 async function htmlToPDF(html, outPath) {
   const { chromium } = await import('playwright');
   mkdirSync(dirname(outPath), { recursive: true });
-  const browser = await chromium.launch();
+  // headless salvo HEADED=1 / --headed / --visible, mismo criterio que browser-utils.mjs
+  const headed = process.env.HEADED === '1'
+    || process.argv.includes('--headed')
+    || process.argv.includes('--visible');
+  const browser = await chromium.launch({ headless: !headed });
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
@@ -381,6 +385,47 @@ function slugify(str) {
  * @param {object} job — registro de applications (id, title, company, notes, ...)
  * @returns {{ path: string, role: string, lang: string } | null}
  */
+/**
+ * Piso garantizado de una seleccion, despues de validate().
+ *
+ * Vive aca y se exporta porque la corren DOS caminos: el de produccion, en
+ * _tailorCV, y el del eval, en evals/provider.mjs. Estaba escrito solo en el
+ * primero, asi que el eval medía un sistema sin piso y reportaba "0 skills"
+ * donde produccion pone seis. Un test que ejercita un camino que no existe no
+ * mide nada; peor, hace ruido donde no hay problema.
+ *
+ * El caso que lo destapó: un aviso con una inyeccion de prompt. El modelo
+ * contesta con un objeto que no es una seleccion, validate() lo deja vacio, y
+ * es justo aca donde el sistema se planta y arma un CV base correcto.
+ */
+// Tope de skills que entra en el layout de una pagina. Lo usan validate() y
+// aplicarMinimos: escrito una sola vez para que no puedan discrepar.
+export const MAX_SKILLS = 10;
+
+export function aplicarMinimos(selection, role) {
+  selection.skill_ids_ordered = enforceSkillCore(selection.headline_role, selection.skill_ids_ordered);
+  // enforceSkillCore corre DESPUES de validate(), que ya habia recortado a 10
+  // porque "el layout de una pagina banca 10 skills". Al sumar el nucleo por
+  // encima, el CV real salia con 12 y desbordaba ese limite: el techo se
+  // aplicaba antes del ultimo paso que agrega. Se recorta de nuevo al final.
+  if (selection.skill_ids_ordered.length > MAX_SKILLS) {
+    selection.skill_ids_ordered = selection.skill_ids_ordered.slice(0, MAX_SKILLS);
+  }
+  if (!selection.experience_bullet_ids?.cd?.length) {
+    selection.experience_bullet_ids = { cd: ['cd1', 'cd3', 'cd5'] };
+  }
+  if (!selection.project_ids_ordered?.length) {
+    selection.project_ids_ordered = ['huntdesk', 'docunify', 'forgix'];
+  }
+  if (!selection.skill_ids_ordered?.length) {
+    selection.skill_ids_ordered = ['sk_ts', 'sk_react', 'sk_next', 'sk_node', 'sk_gql', 'sk_claude'];
+  }
+  if (!selection.headline_role || !['ai', 'fullstack', 'frontend'].includes(selection.headline_role)) {
+    selection.headline_role = role;
+  }
+  return selection;
+}
+
 export async function tailorCV(job) {
   return spanTask('tailor_cv', {
     'job.company': job?.company,
@@ -404,22 +449,7 @@ async function _tailorCV(job) {
       // 2. Validación determinística
       validate(selection, facts, lang);
 
-      // Fix 2: imponer núcleo fijo de skills
-      selection.skill_ids_ordered = enforceSkillCore(selection.headline_role, selection.skill_ids_ordered);
-
-      // Asegurar que hay al menos algo
-      if (!selection.experience_bullet_ids?.cd?.length) {
-        selection.experience_bullet_ids = { cd: ['cd1', 'cd3', 'cd5'] };
-      }
-      if (!selection.project_ids_ordered?.length) {
-        selection.project_ids_ordered = ['huntdesk', 'docunify', 'forgix'];
-      }
-      if (!selection.skill_ids_ordered?.length) {
-        selection.skill_ids_ordered = ['sk_ts', 'sk_react', 'sk_next', 'sk_node', 'sk_gql', 'sk_claude'];
-      }
-      if (!selection.headline_role || !['ai','fullstack','frontend'].includes(selection.headline_role)) {
-        selection.headline_role = role;
-      }
+      aplicarMinimos(selection, role);
 
       // 3. Render HTML
       const html = renderHTML(selection, facts, lang);
