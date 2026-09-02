@@ -17,6 +17,13 @@ export function openDB() {
   // Migracion de la base existente (1800+ filas). Guardada asi para que corra
   // una sola vez y desde cualquier worker que abra la DB por este helper.
   try { db.exec(`ALTER TABLE applications ADD COLUMN description TEXT DEFAULT ''`); } catch {}
+  // notes venia cumpliendo dos roles: la metadata que escribe el scout y el
+  // veredicto que escribe el applier. Como el scout refresca notes cada vez que
+  // reencuentra un aviso, le borraba el "BLOCKED: Job closed/expired" y el
+  // applier volvia a intentar el mismo aviso muerto tres veces por dia. Separar
+  // las columnas es el arreglo de fondo: cada proceso escribe la suya y no hay
+  // forma de que uno pise al otro.
+  try { db.exec(`ALTER TABLE applications ADD COLUMN veredicto TEXT DEFAULT ''`); } catch {}
   return db;
 }
 
@@ -88,23 +95,27 @@ export function upsertJob(db, { company, title, url, source, status = 'found', n
 }
 
 /**
- * Update (or insert) an application's status + notes.
+ * Update (or insert) an application's status + veredicto.
  * Matches by url when id not provided.
+ *
+ * El veredicto va en su propia columna y NO en notes: notes es de la metadata
+ * del board, que el scout refresca en cada corrida. Escribir el veredicto ahi
+ * hacia que el scout lo borrara cada ocho horas.
  */
 export function markResult(db, { id, url, company, title, source = 'direct', platform = 'direct' }, status, note) {
   const n = String(note).slice(0, 500);
   if (id) {
-    db.prepare("UPDATE applications SET status=?, notes=?, updated_at=datetime('now') WHERE id=?")
+    db.prepare("UPDATE applications SET status=?, veredicto=?, updated_at=datetime('now') WHERE id=?")
       .run(status, n, id);
     return;
   }
   const ex = db.prepare('SELECT id FROM applications WHERE url=?').get(url);
   if (ex) {
-    db.prepare("UPDATE applications SET status=?, notes=?, updated_at=datetime('now') WHERE url=?")
+    db.prepare("UPDATE applications SET status=?, veredicto=?, updated_at=datetime('now') WHERE url=?")
       .run(status, n, url);
   } else {
     db.prepare(
-      'INSERT INTO applications (company,title,url,source,status,notes,platform) VALUES (?,?,?,?,?,?,?)'
+      'INSERT INTO applications (company,title,url,source,status,veredicto,platform) VALUES (?,?,?,?,?,?,?)'
     ).run(company ?? '', title ?? '', url, source, status, n, platform);
   }
 }

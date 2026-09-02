@@ -304,7 +304,7 @@ if (jobInfo.method === 'email' && jobInfo.email) {
 
   // Save to DB
   db.prepare(`
-    INSERT INTO applications (company, title, url, status, platform, source, notes, updated_at)
+    INSERT INTO applications (company, title, url, status, platform, source, veredicto, updated_at)
     VALUES (?, ?, ?, 'applied', 'direct', 'apply-now', ?, datetime('now'))
   `).run(
     jobInfo.company,
@@ -363,7 +363,7 @@ if (jobInfo.method === 'email' && jobInfo.email) {
       console.error('[apply-now] No form or Apply button found. Cannot submit.');
       log('blocked', `${jobInfo.company} | ${jobInfo.title} — no form or apply button`);
       db.prepare(`
-        INSERT INTO applications (company, title, url, status, platform, source, notes, updated_at)
+        INSERT INTO applications (company, title, url, status, platform, source, veredicto, updated_at)
         VALUES (?, ?, ?, 'found', 'direct', 'apply-now', 'BLOCKED: no form or apply button', datetime('now'))
       `).run(jobInfo.company, jobInfo.title, targetUrl);
       await browserResult.close();
@@ -390,7 +390,7 @@ if (jobInfo.method === 'email' && jobInfo.email) {
       console.log(`\n✅ Application submitted — confirmed at ${proof.finalUrl.slice(0, 60)}`);
       log('applied', `${jobInfo.company} | ${jobInfo.title} → CONFIRMED`);
       db.prepare(`
-        INSERT INTO applications (company, title, url, status, platform, source, notes, updated_at)
+        INSERT INTO applications (company, title, url, status, platform, source, veredicto, updated_at)
         VALUES (?, ?, ?, 'applied', 'direct', 'apply-now', ?, datetime('now'))
       `).run(jobInfo.company, jobInfo.title, targetUrl, `CONFIRMED: ${proof.finalUrl}`);
     } else {
@@ -398,7 +398,7 @@ if (jobInfo.method === 'email' && jobInfo.email) {
       if (proof.screenshotPath) console.log(`   Screenshot: ${proof.screenshotPath}`);
       log('applied', `${jobInfo.company} | ${jobInfo.title} → UNVERIFIED`);
       db.prepare(`
-        INSERT INTO applications (company, title, url, status, platform, source, notes, updated_at)
+        INSERT INTO applications (company, title, url, status, platform, source, veredicto, updated_at)
         VALUES (?, ?, ?, 'applied', 'direct', 'apply-now', ?, datetime('now'))
       `).run(jobInfo.company, jobInfo.title, targetUrl, `UNVERIFIED | screenshot: ${proof.screenshotPath || 'none'}`);
     }
@@ -406,7 +406,7 @@ if (jobInfo.method === 'email' && jobInfo.email) {
     console.log('\n❌ Form filled but no submit button found. Check page manually.');
     log('blocked', `${jobInfo.company} | ${jobInfo.title} — form filled, no submit`);
     db.prepare(`
-      INSERT INTO applications (company, title, url, status, platform, source, notes, updated_at)
+      INSERT INTO applications (company, title, url, status, platform, source, veredicto, updated_at)
       VALUES (?, ?, ?, 'found', 'direct', 'apply-now', 'BLOCKED: form filled but no submit button', datetime('now'))
     `).run(jobInfo.company, jobInfo.title, targetUrl);
   }

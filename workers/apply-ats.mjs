@@ -197,11 +197,11 @@ function alreadyAppliedToday(company) {
 const allDbJobs = db.prepare(`
   SELECT id, company, title, url, description, COALESCE(score, 0) AS score FROM applications
   WHERE status='found'
-    -- Todo descarte terminal se escribe con el prefijo BLOCKED:. El filtro de
-    -- ubicacion escribia SKIPPED:, que nadie leia: los avisos rechazados por pais
-    -- volvian a la cola en cada corrida. Cinco avisos de gitlab, todos "Remote, US",
-    -- se comian 4 de los 5 cupos de cada corrida desde el 21/8.
-    AND (notes NOT LIKE 'BLOCKED:%' OR notes IS NULL)
+    -- Todo descarte terminal se escribe con el prefijo BLOCKED:, y va en la
+    -- columna veredicto, que es del applier. notes es del scout y la refresca en
+    -- cada corrida: mientras el veredicto vivio ahi, el scout lo borraba cada
+    -- ocho horas y estos mismos avisos volvian a la cola para siempre.
+    AND (veredicto NOT LIKE 'BLOCKED:%' OR veredicto IS NULL)
     AND (url LIKE '%ashbyhq.com%' OR url LIKE '%lever.co%'
       OR url LIKE '%greenhouse.io%' OR url LIKE '%workable.com%'
       OR url LIKE '%personio.com%'

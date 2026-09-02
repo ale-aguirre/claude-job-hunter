@@ -60,3 +60,8 @@ workers/evals/r*.json
 
 # Log de la tarea programada del applier
 workers/applier.log
+
+# Estado de los watchers (se regenera solo)
+workers/.hn-watch-state.json
+workers/.hn-last-thread.txt
+workers/.hackathon-watch-state.json

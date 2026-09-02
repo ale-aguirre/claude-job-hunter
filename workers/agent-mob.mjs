@@ -183,18 +183,18 @@ function log(msg, status = 'info') {
 }
 
 function markRegistered(jobId, platformName) {
-  db.prepare("UPDATE applications SET notes = 'MOB_REGISTERED: ' || ? || ' — ' || datetime('now'), updated_at = datetime('now') WHERE id = ?")
+  db.prepare("UPDATE applications SET veredicto = 'MOB_REGISTERED: ' || ? || ' — ' || datetime('now'), updated_at = datetime('now') WHERE id = ?")
     .run(platformName, jobId);
 }
 
 function markBlocked(jobId, reason) {
-  db.prepare("UPDATE applications SET notes = 'BLOCKED: MOB — ' || ?, updated_at = datetime('now') WHERE id = ?")
+  db.prepare("UPDATE applications SET veredicto = 'BLOCKED: MOB — ' || ?, updated_at = datetime('now') WHERE id = ?")
     .run(String(reason).slice(0, 150), jobId);
 }
 
 function alreadyRegistered(jobId) {
   const r = db.prepare('SELECT notes FROM applications WHERE id = ?').get(jobId);
-  return r?.notes?.startsWith('MOB_REGISTERED:') || false;
+  return r?.veredicto?.startsWith('MOB_REGISTERED:') || false;
 }
 
 // ─── Gmail verification ───────────────────────────────────────────────────────
@@ -375,7 +375,7 @@ const PLATFORM_URL_PATTERNS = Object.values(PLATFORMS).map(p => p.pattern.source
 const candidates = db.prepare(`
   SELECT id, company, title, url, notes, source FROM applications
   WHERE status = 'found'
-    AND (notes IS NULL OR (notes NOT LIKE 'MOB_REGISTERED:%' AND notes NOT LIKE 'BLOCKED:%'))
+    AND (veredicto IS NULL OR (veredicto NOT LIKE 'MOB_REGISTERED:%' AND veredicto NOT LIKE 'BLOCKED:%'))
     AND (
       url LIKE '%wellfound.com%' OR url LIKE '%himalayas.app%'
       OR url LIKE '%torre.co%' OR url LIKE '%getonbrd.com%'

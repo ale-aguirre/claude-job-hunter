@@ -28,10 +28,10 @@ const applied = byStatus.applied || 0;
 // page after submit and saw a success state; UNVERIFIED means the click landed
 // but nothing proved it went through.
 const confirmed = one(
-  "SELECT COUNT(*) n FROM applications WHERE status='applied' AND notes LIKE 'CONFIRMED%'"
+  "SELECT COUNT(*) n FROM applications WHERE status='applied' AND veredicto LIKE 'CONFIRMED%'"
 ).n;
 const unverified = one(
-  "SELECT COUNT(*) n FROM applications WHERE status='applied' AND notes LIKE 'UNVERIFIED%'"
+  "SELECT COUNT(*) n FROM applications WHERE status='applied' AND veredicto LIKE 'UNVERIFIED%'"
 ).n;
 const emailed = one(
   "SELECT COUNT(*) n FROM applications WHERE status='applied' AND (notes LIKE 'emailed%' OR notes LIKE '%| email:%')"
@@ -54,8 +54,8 @@ const hosts = all(`
       WHEN url LIKE '%lever.co%'        THEN 'Lever'
       ELSE 'Other'
     END host,
-    SUM(notes LIKE 'CONFIRMED%')  ok,
-    SUM(notes LIKE 'UNVERIFIED%') unv,
+    SUM(veredicto LIKE 'CONFIRMED%')  ok,
+    SUM(veredicto LIKE 'UNVERIFIED%') unv,
     COUNT(*) n
   FROM applications WHERE status='applied'
   GROUP BY 1 ORDER BY n DESC
