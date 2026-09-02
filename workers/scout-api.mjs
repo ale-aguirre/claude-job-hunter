@@ -244,8 +244,24 @@ const insertStmt = db.prepare(`
   INSERT OR IGNORE INTO applications (company,title,url,source,status,notes,platform,posted_at,description)
   VALUES (?,?,?,?,?,?,?,?,?)
 `);
+// La condicion sobre notes no es un detalle: sin ella el scout pisa el veredicto
+// del applier con la metadata del board. Un aviso que el applier marco
+// "BLOCKED: Job closed/expired" volvia a quedar con notes tipo
+// "AgenticJobs | Remote | full-time", o sea limpio, y ocho horas despues el
+// applier lo elegia de nuevo porque su query excluye justamente los BLOCKED.
+//
+// El bucle se veia clarito en el log: las cinco corridas automaticas del 1 y 2
+// de septiembre tocaron exactamente los mismos ocho avisos, seis de ellos
+// cerrados, mientras habia 61 sin tocar en la cola. Tres corridas por dia
+// gastadas en avisos muertos.
+//
+// notes cumple dos roles a la vez, metadata del board y veredicto del applier, y
+// eso es lo que hay que separar algun dia. Mientras tanto, el veredicto gana:
+// lo escribio alguien que abrio la pagina.
 const updateStmt = db.prepare(`
-  UPDATE applications SET notes=?, updated_at=datetime('now') WHERE url=? AND status='found'
+  UPDATE applications SET notes=?, updated_at=datetime('now')
+  WHERE url=? AND status='found'
+    AND (notes IS NULL OR notes NOT LIKE 'BLOCKED:%')
 `);
 
 // Only block TRUE career homepages — ATS company pages + root /careers paths
