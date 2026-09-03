@@ -65,3 +65,4 @@ workers/applier.log
 workers/.hn-watch-state.json
 workers/.hn-last-thread.txt
 workers/.hackathon-watch-state.json
+workers/check-alive.log

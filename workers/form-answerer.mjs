@@ -38,13 +38,21 @@ const EEO_LABEL_RE = /\b(gender|ethnicity|race|hispanic|latino|latinx|veteran|di
 const DECLINE_OPTION_RE = /decline|prefer not|don'?t wish|not to (answer|disclose|self-identify)|not disclose/i;
 
 // Legal/visa/salary — the categories the repo owner explicitly forbids guessing on.
-const SALARY_RE = /salary expectation|compensation expectation|desired salary|expected salary|salary range you.?re seeking|desired (hourly )?rate|hourly rate|pay rate|rate you.?re seeking/i;
+// "requirement" y "requirements" faltaban, y son la forma que usan varios boards:
+// el 3/9 "What is your monthly salary requirement?" de Jeeves quedo sin responder
+// y bloqueo la postulacion, teniendo la respuesta definida desde siempre en
+// SALARY_ANSWER. Van tambien las variantes con "compensation" y "pretension".
+const SALARY_RE = /salary expectation|salary requirement|compensation expectation|compensation requirement|desired salary|expected salary|salary range you.?re seeking|desired (hourly )?rate|hourly rate|pay rate|rate you.?re seeking|pretensi[oó]n salarial|expectativa salarial/i;
 const AUTH_RE   = /authoriz(e|ed|ation) to work in|legally (authorized|eligible) to work/i;
 const SPONSOR_RE = /sponsorship/i;
 const WORKED_HERE_RE = /(previously worked at|worked (for|at)|consulted for|been employed by)\b/i;
 const PREFERRED_NAME_RE = /preferred name|name.*prefer.*use|chosen name/i;
 
-const CATCHALL_OPTION_RE = /located elsewhere|rest of the world|other\b|anywhere else|not listed/i;
+// Opcion "para el resto del mundo" cuando la lista solo nombra sedes. Faltaban
+// las mas comunes: el 3/9 el desplegable de CoinMarketCap ofrecia Global, Hong
+// Kong, Singapore, Kuala Lumpur y Taipei, y "Global" no matcheaba nada, asi que
+// el campo quedo sin responder y la postulacion se bloqueo.
+const CATCHALL_OPTION_RE = /located elsewhere|rest of the world|other\b|anywhere else|not listed|\bglobal\b|worldwide|\bremote\b|anywhere/i;
 
 let _profileSummary = null;
 function profileSummary() {
@@ -309,6 +317,15 @@ export function classifyField(field, job) {
   if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b/i.test(low)) {
     const esTextoLibre = field.type === 'text' || field.type === 'textarea';
     if (esTextoLibre && PROFILE.city) return { kind: 'text', value: PROFILE.city };
+    // Un campo que dice "city" pide una CIUDAD, tambien cuando es un desplegable.
+    // El 3/9 "Location (City)*" de Bolt.new y "Which location are you applying
+    // from?" de CoinMarketCap quedaron sin responder porque se buscaba la opcion
+    // "Argentina" en listas que solo tienen ciudades.
+    const pideCiudad = /city|ciudad/i.test(low);
+    if (pideCiudad && PROFILE.city) {
+      const soloCiudad = PROFILE.city.split(',')[0].trim();
+      return { kind: 'option', value: soloCiudad, fallback: CATCHALL_OPTION_RE, typeHint: soloCiudad };
+    }
     return { kind: 'option', value: 'Argentina', fallback: CATCHALL_OPTION_RE, typeHint: PROFILE.city || 'Argentina' };
   }
 
