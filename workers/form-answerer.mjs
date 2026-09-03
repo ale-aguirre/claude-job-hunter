@@ -314,7 +314,12 @@ export function classifyField(field, job) {
   //    o un combobox de paises, la opcion correcta es el pais. El codigo mandaba
   //    "Argentina" en los dos casos, y en Lever eso devolvia literalmente
   //    "No location found", que era el texto visible en la pantalla.
-  if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b/i.test(low)) {
+  // El ultimo patron cubre la etiqueta pelada "Country*", que el barrido de
+  // formularios del 3/9 encontro sin responder: los patrones de arriba pedian
+  // "which country" o "country of residence" y ninguno matchea la palabra sola.
+  // Va anclado a propósito, para no comerse "Country of citizenship at birth",
+  // que es otro dato y no se contesta desde la ubicacion.
+  if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
     const esTextoLibre = field.type === 'text' || field.type === 'textarea';
     if (esTextoLibre && PROFILE.city) return { kind: 'text', value: PROFILE.city };
     // Un campo que dice "city" pide una CIUDAD, tambien cuando es un desplegable.
