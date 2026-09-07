@@ -297,43 +297,6 @@ export function classifyField(field, job) {
   // "How did you hear about us" — deterministic per repo rules.
   if (/how did you (hear|find out|come across)/i.test(low)) return { kind: 'option', value: 'LinkedIn', fallback: 'Job board' };
 
-  // Country / location questions. Ashby's system location field is literally
-  // just labelled "Location" — confirmed live on Braintrust/g2i, both required.
-  //
-  // Dos cosas mas, aprendidas el 31/8 mirando el formulario real de CopilotKit
-  // en Lever, donde este campo abortaba la postulacion con "unanswerable":
-  //
-  // 1. La etiqueta no siempre es "Location" a secas. Ahi era "Current location",
-  //    y ^location$ no matchea eso. Peor: el label que llega trae pegado el
-  //    mensaje del propio autocompletar ("Current location No location found.
-  //    Try entering a..."), asi que hay que buscar la frase DENTRO del label en
-  //    vez de exigir que el label sea la frase.
-  //
-  // 2. Un input de texto con autocompletar de CIUDADES no entiende "Argentina".
-  //    Si el control es texto libre hay que escribir la ciudad; si es un select
-  //    o un combobox de paises, la opcion correcta es el pais. El codigo mandaba
-  //    "Argentina" en los dos casos, y en Lever eso devolvia literalmente
-  //    "No location found", que era el texto visible en la pantalla.
-  // El ultimo patron cubre la etiqueta pelada "Country*", que el barrido de
-  // formularios del 3/9 encontro sin responder: los patrones de arriba pedian
-  // "which country" o "country of residence" y ninguno matchea la palabra sola.
-  // Va anclado a propósito, para no comerse "Country of citizenship at birth",
-  // que es otro dato y no se contesta desde la ubicacion.
-  if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
-    const esTextoLibre = field.type === 'text' || field.type === 'textarea';
-    if (esTextoLibre && PROFILE.city) return { kind: 'text', value: PROFILE.city };
-    // Un campo que dice "city" pide una CIUDAD, tambien cuando es un desplegable.
-    // El 3/9 "Location (City)*" de Bolt.new y "Which location are you applying
-    // from?" de CoinMarketCap quedaron sin responder porque se buscaba la opcion
-    // "Argentina" en listas que solo tienen ciudades.
-    const pideCiudad = /city|ciudad/i.test(low);
-    if (pideCiudad && PROFILE.city) {
-      const soloCiudad = PROFILE.city.split(',')[0].trim();
-      return { kind: 'option', value: soloCiudad, fallback: CATCHALL_OPTION_RE, typeHint: soloCiudad };
-    }
-    return { kind: 'option', value: 'Argentina', fallback: CATCHALL_OPTION_RE, typeHint: PROFILE.city || 'Argentina' };
-  }
-
   // "Have you worked at / consulted for <company>" — truthful deterministic No,
   // company is never in cv-facts.experience.
   if (WORKED_HERE_RE.test(low) && job?.company && low.includes(job.company.toLowerCase().split(' ')[0])) {
@@ -372,6 +335,58 @@ export function classifyField(field, job) {
     }
     return { kind: 'abort', reason: `requiere respuesta humana: ${label}` };
   }
+
+  // El bloque de ubicacion va ACA, al final de las reglas especificas, y no
+  // arriba como estaba. Su patron incluye "located in" y "your location", que
+  // aparecen dentro de preguntas que tienen su propia regla: el 7/9 se comio la
+  // de sponsorship ("...to remain in your current location?") y le contesto
+  // "Argentina" en vez de "No". Lo general va despues de lo especifico.
+  // Country / location questions. Ashby's system location field is literally
+  // just labelled "Location" — confirmed live on Braintrust/g2i, both required.
+  //
+  // Dos cosas mas, aprendidas el 31/8 mirando el formulario real de CopilotKit
+  // en Lever, donde este campo abortaba la postulacion con "unanswerable":
+  //
+  // 1. La etiqueta no siempre es "Location" a secas. Ahi era "Current location",
+  //    y ^location$ no matchea eso. Peor: el label que llega trae pegado el
+  //    mensaje del propio autocompletar ("Current location No location found.
+  //    Try entering a..."), asi que hay que buscar la frase DENTRO del label en
+  //    vez de exigir que el label sea la frase.
+  //
+  // 2. Un input de texto con autocompletar de CIUDADES no entiende "Argentina".
+  //    Si el control es texto libre hay que escribir la ciudad; si es un select
+  //    o un combobox de paises, la opcion correcta es el pais. El codigo mandaba
+  //    "Argentina" en los dos casos, y en Lever eso devolvia literalmente
+  //    "No location found", que era el texto visible en la pantalla.
+  // El ultimo patron cubre la etiqueta pelada "Country*", que el barrido de
+  // formularios del 3/9 encontro sin responder: los patrones de arriba pedian
+  // "which country" o "country of residence" y ninguno matchea la palabra sola.
+  // Va anclado a propósito, para no comerse "Country of citizenship at birth",
+  // que es otro dato y no se contesta desde la ubicacion.
+  if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
+    // Este bloque es un embudo peligroso: el patron de arriba incluye "located
+    // in" y "your location", que aparecen adentro de preguntas que NO piden una
+    // ubicacion. El 7/9 respondio "Argentina" a "Are you located in the
+    // following countries: Cuba, Iran, North Korea, Syria, Russia...", que es
+    // una pregunta de si o no sobre paises sancionados. Alexis vive en
+    // Argentina, que no figura en ninguna de esas listas.
+    const PAISES_SANCIONADOS = /cuba|iran|north korea|corea del norte|syria|siria|russia|rusia|crimea|donetsk|luhansk|belarus|bielorrusia|venezuela|myanmar|sudan/i;
+    if (PAISES_SANCIONADOS.test(low)) return { kind: 'option', value: 'No' };
+
+    // Un campo que dice "city" pide una CIUDAD, tambien cuando es desplegable:
+    // buscar "Argentina" en una lista de ciudades no matchea nada. Lo mismo con
+    // el autocompletar de Lever y Ashby, que solo entiende ciudades.
+    const soloCiudad = (PROFILE.city || '').split(',')[0].trim();
+    if (/city|ciudad/i.test(low) && soloCiudad) {
+      return { kind: 'option', value: soloCiudad, fallback: CATCHALL_OPTION_RE, typeHint: soloCiudad };
+    }
+    if ((field.type === 'text' || field.type === 'textarea') && soloCiudad) {
+      return { kind: 'text', value: soloCiudad };
+    }
+
+    return { kind: 'option', value: 'Argentina', fallback: CATCHALL_OPTION_RE, typeHint: soloCiudad || 'Argentina' };
+  }
+
 
   // Multi-select checkbox group ("select up to N languages/skills/etc") —
   // needs a different LLM shape (pick several, not one).
