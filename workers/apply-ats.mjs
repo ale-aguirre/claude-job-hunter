@@ -39,12 +39,20 @@ const ATS_URL_PATTERNS = [
 // Dynamic keywords from user's CV/profile via profile-extractor
 const profileKw       = await getProfileKeywords();
 const APPLY_KEYWORDS  = profileKw.searchTerms;
-const EXCLUDE_KEYWORDS = profileKw.excludeTerms || [];
+// El cache de keywords lo genera un LLM y vuelve a meter "staff" cada vez que se
+// regenera, asi que la decision de admitir Staff se aplica aca y no depende de lo
+// que el modelo devuelva en la proxima corrida.
+const EXCLUDE_KEYWORDS = (profileKw.excludeTerms || []).filter(k => !/^\s*staff\s*$/i.test(String(k)));
 
 // Hard role exclusion, independent of the LLM-generated profile cache (which
 // on 13/8 did not include "manager" and let apply-ats try to fill a form for
 // "Engineering Manager, AI Engineering: Chat" — not this candidate's role).
-const ROLE_EXCLUDE_RE = /\b(manager|director|vp\b|head of|chief\b|staff\b|principal\b)\b/i;
+// Decision de Alexis (7/9): Staff SI, Lead NO. Staff es contribuidor individual
+// senior, escribe codigo. Lead segun la empresa maneja gente, y manager,
+// director, vp y head of son directamente puestos de gestion: otro laburo y otro
+// CV. Sin esto la cola quedaba en cero, porque los unicos avisos que sobrevivian
+// el scoring eran justamente los Staff.
+const ROLE_EXCLUDE_RE = /\b(manager|director|vp\b|head of|chief\b|lead\b|principal\b)\b/i;
 
 /**
  * El score ya es el juicio de relevancia del sistema: lo calcula scoreJob() en
