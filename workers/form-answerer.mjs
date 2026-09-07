@@ -290,7 +290,7 @@ export function classifyField(field, job) {
   // estandar y no compromete a nada imposible; si en una busqueda puntual puede
   // antes, se negocia en la entrevista, que es donde corresponde.
   // Cambiar con START_DATE_ANSWER en .env sin tocar este archivo.
-  if (/earliest (start|possible start) date|when (can|could) you start|notice period|available to start|start date/i.test(low)) {
+  if (/earliest ((start|possible start) )?date|(when|how soon) (can|could) you start|date you could start|notice period|available to start|start date|fecha de (inicio|ingreso)/i.test(low)) {
     return { kind: 'text', value: START_DATE_ANSWER, optionFallback: START_DATE_ANSWER };
   }
 
