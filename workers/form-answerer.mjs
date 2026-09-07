@@ -417,7 +417,11 @@ export async function llmChooseOption(question, options, job) {
         // gpt-oss on Groq "thinks" before answering and the thinking is billed
         // against max_tokens (see anthropic-client.mjs) — 20 was too tight and
         // truncated the reply to nothing on the first live run. 80 leaves room.
-        const raw = await callFast(system, user, 80);
+        // gpt-oss razona antes de contestar y ese razonamiento se descuenta del
+        // mismo presupuesto: con margen chico la respuesta vuelve vacia y el campo
+        // queda sin responder, que bloquea la postulacion entera. Mismo bug que
+        // tenia cv-tailor con 800, aca con 80, 150 y 220.
+        const raw = await callFast(system, user, 700);
         const n = parseInt((raw.match(/\d+/) || [])[0], 10);
         if (Number.isInteger(n) && n >= 1 && n <= options.length) return { index: n - 1, text: options[n - 1] };
         if (n === 0) return { index: -1, text: null };
@@ -440,7 +444,7 @@ export async function llmChooseMultipleOptions(question, options, job, maxPick =
         // options (e.g. 24 languages), so gpt-oss's pre-answer "thinking"
         // tokens (billed against max_tokens, see anthropic-client.mjs) need
         // more room — 80 truncated to nothing on g2i's language checklist.
-        const raw = await callFast(system, user, 150);
+        const raw = await callFast(system, user, 800);
         if (/^\s*0\s*$/.test(raw.trim())) return [];
         const nums = [...raw.matchAll(/\d+/g)].map(m => parseInt(m[0], 10)).filter(n => n >= 1 && n <= options.length);
         const uniq = [...new Set(nums)].slice(0, maxPick);
@@ -464,7 +468,7 @@ export async function llmShortAnswer(question, job) {
     const user = `Job: ${job?.title || ''} at ${job?.company || ''}\n\nQuestion: ${question}\n\nCandidate facts (only use these):\n${facts.summary_base.en}\n- ${bulletPool}`;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const raw = (await callFast(system, user, 220)).trim();
+        const raw = (await callFast(system, user, 900)).trim();
         if (!raw || /^NO_ANSWER$/i.test(raw)) return null;
         return raw.slice(0, 400);
       } catch (e) {
