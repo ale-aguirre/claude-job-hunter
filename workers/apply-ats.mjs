@@ -183,12 +183,33 @@ function isLocationEligible(locationText) {
 }
 
 // Max applications per company today — prevents ATS spam/blacklist
+// Tope por empresa. El diario solo, que era lo unico que habia, no evitaba lo
+// que paso con gitlab: 42 postulaciones a la misma empresa a lo largo de meses,
+// de a dos por dia. Un recruiter que abre el legajo ve cuarenta y dos
+// solicitudes del mismo candidato, y eso no ayuda, perjudica.
+//
+// gitlab, cursor y vanta ocupan un tercio de la cola viva porque publican mucho.
+// Sin tope historico, el bot se dedica a esas tres y no llega al resto.
+const MAX_POR_EMPRESA_HISTORICO = parseInt(process.env.MAX_POR_EMPRESA || '3');
+
 function alreadyAppliedToday(company) {
-  const count = db.prepare(`
+  const hoy = db.prepare(`
     SELECT COUNT(*) as n FROM applications
     WHERE status='applied' AND company=? AND updated_at >= datetime('now','-1 day')
   `).get(company)?.n || 0;
-  return count >= 2; // max 2 per company per day
+  if (hoy >= 2) return true;                         // max 2 per company per day
+
+  // Cuenta TODA postulacion real, no solo las que siguen activas: a los 30 dias
+  // de silencio pasan a archived y desaparecerian del conteo. Las 42 de gitlab
+  // estan justamente ahi. Se cuenta por la evidencia de envio (veredicto
+  // CONFIRMED/UNVERIFIED o sent_at), que sobrevive al archivado.
+  const total = db.prepare(`
+    SELECT COUNT(*) as n FROM applications
+    WHERE lower(company)=lower(?)
+      AND (status='applied' OR veredicto LIKE 'CONFIRMED%' OR veredicto LIKE '%UNVERIFIED%'
+           OR (sent_at IS NOT NULL AND sent_at != ''))
+  `).get(company)?.n || 0;
+  return total >= MAX_POR_EMPRESA_HISTORICO;
 }
 
 // Note: getonbrd.com removed — requires active session cookies (use apply-from-db.mjs with Chrome mirror instead)
