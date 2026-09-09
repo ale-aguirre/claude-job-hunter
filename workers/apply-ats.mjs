@@ -74,17 +74,38 @@ const ROLE_EXCLUDE_RE = /\b(manager|director|vp\b|head of|chief\b|lead\b|princip
  * ROLE_EXCLUDE_RE queda como veto duro en los dos caminos: es la unica regla
  * que no depende del cache de keywords generado por el LLM.
  */
-const SCORE_CONFIABLE = 5;
+// Umbral a partir del cual manda el score y no la keyword. Estaba en 5 y dejaba
+// afuera avisos evidentes: "Senior / Staff Fullstack Engineer" con 4 y "Senior
+// AI Platform Engineer" con 3. El scoring de rules.mjs mira titulo, notas,
+// plataforma y ubicacion; la lista de keywords solo mira el titulo y exige la
+// frase exacta. Confiar en la peor de las dos por dos puntos de diferencia
+// costaba 24 candidatos de una cola de 278.
+const SCORE_CONFIABLE = 3;
+
+/**
+ * Normaliza el titulo para comparar contra las keywords del perfil.
+ *
+ * "Fullstack" y "full stack" son la misma palabra escrita distinto, igual que
+ * "front-end" y "frontend". Sin esto, "Senior / Staff Fullstack Engineer" no
+ * matcheaba la keyword "full stack" y quedaba afuera, que es la misma familia
+ * de bug que el guion de "Full-Stack": comparar texto sin normalizarlo.
+ */
+function normalizarTitulo(t) {
+  return t.toLowerCase()
+    .replace(/[-/_]+/g, ' ')
+    .replace(/fullstack/g, 'full stack')
+    .replace(/frontend/g, 'front end')
+    .replace(/backend/g, 'back end')
+    .replace(/\s+/g, ' ');
+}
 
 function isRelevantTitle(title = '', score = 0) {
   const t = title.toLowerCase();
   if (ROLE_EXCLUDE_RE.test(t)) return false;
   if (EXCLUDE_KEYWORDS.some(k => t.includes(k.toLowerCase()))) return false;
   if (score >= SCORE_CONFIABLE) return true;
-  // Guiones y barras separan palabras igual que un espacio: sin esto,
-  // "Full-Stack" no matchea la keyword "full stack".
-  const normalizado = t.replace(/[-/_]+/g, ' ');
-  return APPLY_KEYWORDS.some(k => normalizado.includes(k.toLowerCase().replace(/[-/_]+/g, ' ')));
+  const normalizado = normalizarTitulo(t);
+  return APPLY_KEYWORDS.some(k => normalizado.includes(normalizarTitulo(k)));
 }
 
 // ── Location filter ───────────────────────────────────────────────────────────

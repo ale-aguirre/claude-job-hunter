@@ -18,6 +18,12 @@ const Database = require('better-sqlite3');
 const DRY = process.argv.includes('--dry');
 const LIMIT = parseInt(process.argv.find(a => a.startsWith('--limit='))?.split('=')[1] || '250');
 const db = new Database('applications.db');
+// Sin esto, un UPDATE mientras el filter o el scout tienen la base tomada tira
+// SQLITE_BUSY, y como el UPDATE corre fuera del try/catch de check() la
+// excepcion sube por el Promise.all y mata la corrida entera. Pasaba en las
+// corridas automaticas: check-alive esta agendado a las :25 y el filter a
+// las :20. A mano, con lotes chicos, nunca se veia.
+db.pragma('busy_timeout = 15000');
 
 for (const [col, type] of [['alive', 'TEXT'], ['checked_at', 'TEXT']]) {
   const cols = db.prepare('PRAGMA table_info(applications)').all().map(c => c.name);
@@ -103,7 +109,12 @@ for (let i = 0; i < rows.length; i += BATCH) {
   slice.forEach((r, k) => {
     const v = results[k];
     stats[v]++;
-    if (!DRY) setAlive.run(v, r.id);
+    // El UPDATE va protegido: una fila que no se pudo marcar no justifica perder
+    // el chequeo de las otras 599.
+    if (!DRY) {
+      try { setAlive.run(v, r.id); }
+      catch (e) { console.log(`  no se pudo marcar #${r.id}: ${String(e.message).slice(0, 60)}`); }
+    }
   });
   process.stdout.write(`\r  ${Math.min(i + BATCH, rows.length)}/${rows.length}  vivas ${stats.viva} · muertas ${stats.muerta} · inciertas ${stats.incierta}`);
 }
