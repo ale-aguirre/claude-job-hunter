@@ -29,7 +29,11 @@ import { esperarCodigoDeSeguridad } from './inbox-code.mjs';
 
 // ── Constants / policy ───────────────────────────────────────────────────────
 export const SALARY_ANSWER = 'USD 4000 gross monthly, flexible';
-export const START_DATE_ANSWER = process.env.START_DATE_ANSWER || '1 month (notice period)';
+// Dos semanas, no un mes. El 7/9 puse "1 month" suponiendo el preaviso sin
+// chequearlo, y ALEXIS.md lo dice explicito: "para un cambio de trabajo necesita
+// 2 semanas de preaviso". Un mes le restaba puntos en formularios que ordenan por
+// disponibilidad, y era un dato falso en algo que firma el.
+export const START_DATE_ANSWER = process.env.START_DATE_ANSWER || '2 weeks (notice period)';
 
 // Voluntary self-identification (EEO) — never answered by this system, ever,
 // required or not. If the ATS offers a "decline to answer" option it is used;
