@@ -73,8 +73,61 @@ const stats = { viva: 0, muerta: 0, incierta: 0 };
  * usually means the board is blocking us, not that the job is gone, and
  * marking those dead would quietly delete real leads.
  */
+/**
+ * Ashby y Lever renderizan el aviso con JavaScript: un fetch simple trae el
+ * cascaron sin el mensaje de error, asi que un aviso cerrado parece vivo. El
+ * 9/9 check-alive marcaba "viva" cuatro avisos que el applier abria y encontraba
+ * con "Job not found", y cada uno le costaba un cupo de la corrida.
+ *
+ * Los dos boards publican la lista de avisos abiertos por API, que es la misma
+ * que usa el scout. Si el id no esta en esa lista, el aviso se cerro: eso es un
+ * dato, no una inferencia sobre el HTML.
+ *
+ * Se cachea por board porque una corrida trae decenas de avisos de la misma
+ * empresa y seria una llamada por aviso.
+ */
+const cacheBoard = new Map();
+
+async function idsVivosDelBoard(tipo, board) {
+  const clave = `${tipo}:${board}`;
+  if (cacheBoard.has(clave)) return cacheBoard.get(clave);
+  let ids = null;   // null = no se pudo saber, y entonces no se concluye nada
+  try {
+    if (tipo === 'ashby') {
+      const r = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${board}`, { signal: AbortSignal.timeout(12000) });
+      if (r.ok) {
+        const d = await r.json();
+        if (Array.isArray(d.jobs)) ids = d.jobs.map(j => `${j.id || ''} ${j.jobUrl || ''}`).join(' ');
+      }
+    } else {
+      const r = await fetch(`https://api.lever.co/v0/postings/${board}?mode=json`, { signal: AbortSignal.timeout(12000) });
+      if (r.ok) {
+        const d = await r.json();
+        if (Array.isArray(d)) ids = d.map(j => `${j.id || ''} ${j.hostedUrl || ''}`).join(' ');
+      }
+    }
+  } catch { ids = null; }
+  cacheBoard.set(clave, ids);
+  return ids;
+}
+
+/** Devuelve 'viva' | 'muerta' | null (null = este camino no aplica o no concluyo). */
+async function checkPorApi(url) {
+  const a = url.match(/jobs\.ashbyhq\.com\/([^/?#]+)\/([^/?#]+)/i);
+  const l = url.match(/jobs\.lever\.co\/([^/?#]+)\/([0-9a-f-]{20,})/i);
+  const m = a || l;
+  if (!m) return null;
+  const ids = await idsVivosDelBoard(a ? 'ashby' : 'lever', m[1]);
+  if (ids === null) return null;          // la API no contesto: no se concluye
+  return ids.includes(m[2]) ? 'viva' : 'muerta';
+}
+
+
 async function check(r) {
   try {
+    const porApi = await checkPorApi(r.url);
+    if (porApi) return porApi;
+
     const res = await fetch(r.url, {
       method: 'GET', redirect: 'follow',
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0.0.0 Safari/537.36' },
