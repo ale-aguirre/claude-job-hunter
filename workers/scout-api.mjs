@@ -197,7 +197,13 @@ function isRelevant(title = '', tags = [], notes = '') {
   const badTech = EXCLUDE_TECH.find(t => hasWord(titleOnly, t));
   if (badTech) return drop(`stack excluido (${badTech})`, title);
 
-  const badRole = EXCLUDE_ROLES.find(r => titleOnly.includes(r));
+  // hasWord y no includes, igual que la linea de arriba con EXCLUDE_TECH: dos
+  // filtros consecutivos con criterios distintos. Es el bug que el README
+  // documenta como corregido —'java' adentro de 'JavaScript'— sobreviviendo aca.
+  // Medido sobre los 1889 titulos de la base cambia uno: "Singularity 6 -
+  // Software Engineers, Artists, Designers" se descartaba por 'artist' adentro
+  // de 'Artists', siendo un aviso de software engineers.
+  const badRole = EXCLUDE_ROLES.find(r => hasWord(titleOnly, r));
   if (badRole) return drop(`rol no-dev (${badRole})`, title);
 
   if (!DEV_SIGNAL.test(titleOnly)) return drop('titulo no suena a dev', title);
