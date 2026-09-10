@@ -169,7 +169,11 @@ function hasWord(hay, needle) {
 
 // El título tiene que ser de un puesto técnico. Este es el gate real: separa
 // dev de no-dev, que es lo único que hay que decidir acá.
-const DEV_SIGNAL = /engineer|developer|desarrollador|programador|full[ -]?stack|front[ -]?end|back[ -]?end|swe\b|software|tech lead|architect/i;
+// Que un titulo "suene a dev". Se suman las senales de IA generativa: Alexis
+// entrena LoRAs y arma pipelines de generacion en LadyNuggets, y sin esto
+// "Generative Media Engineer" o "AI Artist" morian aca con el motivo "titulo no
+// suena a dev", que es el descarte mas grande del filtro.
+const DEV_SIGNAL = /engineer|developer|desarrollador|programador|full[ -]?stack|front[ -]?end|back[ -]?end|swe|software|tech lead|architect|generative|diffusion|prompt engineer|ai (artist|illustrator|animator)|ai art/i;
 
 /**
  * ¿Este aviso entra al pool?
@@ -203,7 +207,16 @@ function isRelevant(title = '', tags = [], notes = '') {
   // Medido sobre los 1889 titulos de la base cambia uno: "Singularity 6 -
   // Software Engineers, Artists, Designers" se descartaba por 'artist' adentro
   // de 'Artists', siendo un aviso de software engineers.
-  const badRole = EXCLUDE_ROLES.find(r => hasWord(titleOnly, r));
+  // Los roles de arte se excluyen SALVO que el titulo hable de IA generativa.
+  // "Concept Artist" no le sirve; "Generative AI Artist" o "AI Illustrator" si,
+  // porque es lo que hace en LadyNuggets. Decision de Alexis del 9/9.
+  const SENAL_IA = /(ai|a\.i\.|generative|genai|diffusion|llm)/i;
+  const ROLES_DE_ARTE = ['artist', 'illustrator', 'animator'];
+  const badRole = EXCLUDE_ROLES.find(r => {
+    if (!hasWord(titleOnly, r)) return false;
+    if (ROLES_DE_ARTE.includes(r) && SENAL_IA.test(titleOnly)) return false;
+    return true;
+  });
   if (badRole) return drop(`rol no-dev (${badRole})`, title);
 
   if (!DEV_SIGNAL.test(titleOnly)) return drop('titulo no suena a dev', title);
