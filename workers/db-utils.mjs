@@ -14,6 +14,15 @@ export function openDB() {
   db.pragma('synchronous = NORMAL');
   db.pragma('cache_size = -64000');
   db.pragma('temp_store = MEMORY');
+  // Sin esto, cualquier escritura mientras otro worker tiene la base tomada
+  // falla al toque con SQLITE_BUSY en vez de esperar. El 9/9 eso mato a
+  // check-alive en TODAS sus corridas automaticas: esta agendado a las :25 y el
+  // filter a las :20, y bastaba que se rozaran. A mano nunca se reproducia.
+  //
+  // Va aca y no en cada worker porque hay ocho tareas programadas corriendo en
+  // horarios cercanos (scout :00, filter :20, check-alive :25, applier :40, mas
+  // los watchers) y catorce de dieciseis archivos escriben en la misma base.
+  db.pragma('busy_timeout = 15000');
   // Migracion de la base existente (1800+ filas). Guardada asi para que corra
   // una sola vez y desde cualquier worker que abra la DB por este helper.
   try { db.exec(`ALTER TABLE applications ADD COLUMN description TEXT DEFAULT ''`); } catch {}

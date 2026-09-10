@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
 
 const db = new Database('applications.db');
+db.pragma('busy_timeout = 15000');   // ver el comentario en openDB de db-utils
 
 const EXCL = [
   'security engineer', 'customer support', 'sales rep', 'marketing manager',
