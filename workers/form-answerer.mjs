@@ -164,7 +164,10 @@ export async function enumerateFields(page) {
       // earlier version of this code did) silently misclassified every required
       // Yes/No dropdown as a free-text field, so classifyField() never routed
       // "Do you have strong proficiency in...?" etc. to the LLM at all.
-      const type = roleAttr === 'combobox' ? 'combobox' : (el.type || tag);
+      // Un <select> nativo reporta el.type "select-one", y todo el resto del
+      // archivo pregunta por 'select': sin normalizar, los select nativos caian
+      // en setCombobox y no se completaban.
+      const type = roleAttr === 'combobox' ? 'combobox' : tag === 'select' ? 'select' : (el.type || tag);
       const label = computeLabel(el);
 
       if (type === 'radio') {
@@ -285,6 +288,16 @@ export function classifyField(field, job) {
   if (/e-?mail/i.test(low)) return PROFILE.email ? { kind: 'text', value: PROFILE.email } : { kind: 'skip', reason: 'no email in profile' };
   if (/phone/i.test(low)) return PROFILE.phone ? { kind: 'text', value: PROFILE.phone } : { kind: 'skip', reason: 'no phone in profile — not configured in .env' };
   if (/linkedin/i.test(low)) return PROFILE.linkedin ? { kind: 'text', value: PROFILE.linkedin } : { kind: 'skip', reason: 'no linkedin in profile' };
+  // Contribuciones open source. Supabase lo pide obligatorio y el 17/9 bloqueo
+  // la postulacion a Frontend Engineer por no tener respuesta. Hay una real y
+  // verificable: intent-gate, publicado en npm (0.1.0) con tests y CI.
+  if (/open[\s-]?source/i.test(low)) {
+    return {
+      kind: 'text',
+      value: 'Yes. I published intent-gate, an open source TypeScript library on npm: https://github.com/ale-aguirre/intent-gate (25 tests, CI on Node 20 and 22). More at https://github.com/ale-aguirre',
+      optionFallback: 'Yes',
+    };
+  }
   if (/github/i.test(low)) return PROFILE.github ? { kind: 'text', value: PROFILE.github } : { kind: 'skip', reason: 'no github in profile' };
   if (/portfolio|personal website/i.test(low)) return PROFILE.portfolio ? { kind: 'text', value: PROFILE.portfolio } : { kind: 'skip', reason: 'no portfolio in profile' };
   if (/^city$/i.test(low.trim())) return PROFILE.city ? { kind: 'text', value: PROFILE.city } : { kind: 'skip', reason: 'no city in profile' };
@@ -738,7 +751,7 @@ export async function fillAllRequiredFields(page, job) {
     if (field.filled) { report.push({ label: field.label, required: field.required, method: 'already-filled', value: field.value }); continue; }
     if (!field.required) { report.push({ label: field.label, required: false, method: 'skip', note: 'optional' }); continue; }
 
-    const cls = classifyField(field, job);
+    let cls = classifyField(field, job);
 
     if (cls.kind === 'skip') {
       report.push({ label: field.label, required: true, method: 'skip', note: cls.reason });
@@ -746,6 +759,13 @@ export async function fillAllRequiredFields(page, job) {
     }
     if (cls.kind === 'abort') {
       return { report: [...report, { label: field.label, required: true, method: 'abort', note: cls.reason }], aborted: cls.reason };
+    }
+
+    // Respuestas de texto fijas (salario, fecha de inicio, open source) cuando
+    // el campo resulta ser un desplegable: escribir texto ahi fallaba y quedaba
+    // reportado como 'deterministic' con 'fill() failed', o sea en silencio.
+    if (cls.kind === 'text' && cls.optionFallback && ['select', 'combobox', 'radio-group', 'yesno-buttons'].includes(field.type)) {
+      cls = { kind: 'option', value: cls.optionFallback };
     }
 
     if (cls.kind === 'text') {
