@@ -300,7 +300,8 @@ export function classifyField(field, job) {
   }
   if (/github/i.test(low)) return PROFILE.github ? { kind: 'text', value: PROFILE.github } : { kind: 'skip', reason: 'no github in profile' };
   if (/portfolio|personal website/i.test(low)) return PROFILE.portfolio ? { kind: 'text', value: PROFILE.portfolio } : { kind: 'skip', reason: 'no portfolio in profile' };
-  if (/^city$/i.test(low.trim())) return PROFILE.city ? { kind: 'text', value: PROFILE.city } : { kind: 'skip', reason: 'no city in profile' };
+  // PROFILE.city trae "Ciudad, Pais": en un campo "City" va solo la ciudad.
+  if (/^city$/i.test(low.trim())) return PROFILE.city ? { kind: 'text', value: PROFILE.city.split(',')[0].trim() } : { kind: 'skip', reason: 'no city in profile' };
 
   // Fecha de inicio / preaviso. Alexis esta en relacion de dependencia, asi que
   // "immediately" seria falso: hay preaviso real que cumplir. Un mes es el plazo
@@ -380,7 +381,7 @@ export function classifyField(field, job) {
   // "which country" o "country of residence" y ninguno matchea la palabra sola.
   // Va anclado a propósito, para no comerse "Country of citizenship at birth",
   // que es otro dato y no se contesta desde la ubicacion.
-  if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
+  if (/country of residence|located in|country\b.*located|which country|currently based|country\b.*\bbased\b|where are you (located|based)|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
     // Este bloque es un embudo peligroso: el patron de arriba incluye "located
     // in" y "your location", que aparecen adentro de preguntas que NO piden una
     // ubicacion. El 7/9 respondio "Argentina" a "Are you located in the
@@ -394,8 +395,17 @@ export function classifyField(field, job) {
     // buscar "Argentina" en una lista de ciudades no matchea nada. Lo mismo con
     // el autocompletar de Lever y Ashby, que solo entiende ciudades.
     const soloCiudad = (PROFILE.city || '').split(',')[0].trim();
+    // PROFILE.city viene como "Ciudad, Pais" (CANDIDATE_CITY en .env).
+    const PAIS = (PROFILE.city || '').split(',').slice(1).join(',').trim() || 'Argentina';
     if (/city|ciudad/i.test(low) && soloCiudad) {
       return { kind: 'option', value: soloCiudad, fallback: CATCHALL_OPTION_RE, typeHint: soloCiudad };
+    }
+    // Un campo que dice "country" pide un PAIS, aunque sea texto libre. El 17/9
+    // Supabase pedia "Country of Residence" como input de texto y el bot escribio
+    // "Córdoba": el formulario nunca se envio y quedo como "unverified", sin
+    // ningun campo en rojo que delatara el motivo.
+    if (/country|pa[ií]s/i.test(low)) {
+      return { kind: 'option', value: PAIS, fallback: CATCHALL_OPTION_RE, typeHint: PAIS };
     }
     if ((field.type === 'text' || field.type === 'textarea') && soloCiudad) {
       return { kind: 'text', value: soloCiudad };
