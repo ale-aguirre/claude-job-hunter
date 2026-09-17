@@ -137,6 +137,69 @@ Return JSON with this exact shape:
   return JSON.parse(match[0]);
 }
 
+// ── Auditoria del summary contra cv-facts.json ───────────────────────────────
+// Palabras que suben el nivel declarado. Se rechazan si summary_base no las usa,
+// aunque aparezcan en otro lado de los hechos.
+const INFLADAS = new Set(['expert', 'expertise', 'senior', 'proficient', 'proficiency',
+  'extensive', 'extensively', 'deep', 'deeply', 'seasoned', 'mastery', 'veteran',
+  'lead', 'principal', 'world-class', 'rigorous', 'robust', 'reliable', 'scalable',
+  'experto', 'experta', 'amplia', 'amplio', 'profunda', 'profundo', 'sólida', 'sólido']);
+
+// Prosa que no afirma nada verificable. Todo lo que no este aca ni en los hechos
+// se trata como afirmacion nueva: el error va hacia summary_base, que es real.
+const PROSA = new Set(`a an and or the of in on to for with from by at as such using via into
+over across after before since while who which that this its their my i i'm i've is are am be
+been has have having can do also both plus more most
+ai-focused focused focus specializing specialized specializes experienced passionate
+build builds built building builder deliver delivers delivered delivering create creates created
+creating design designs designed designing develop develops developed developing implement
+implements implemented implementing integrate integrates integrated integrating integration
+integrations incorporate incorporates incorporating conduct conducts conducting ship ships
+shipped shipping work works working worked emphasize emphasizes emphasizing leverage leverages
+leveraging combine combines combining apply applies applying enable enables enabled enabling
+power powered app apps application applications product products solution solutions feature
+features tool tools project projects system systems platform platforms pipeline pipelines
+modern end ends front back frontend frontends backend backends browser browsers year years
+remote remotely based evaluation evaluations experience experiences hands-on experiment
+experimenting experimentation developer engineer full-stack fullstack stack
+un una unos unas el la los las de del en con para por desde sobre y o que como mi mis su sus
+es son soy más tras entre años año remoto remota basado construyo construí construyendo diseño
+diseñé diseñando integro integré integrando desarrollo desarrollé desarrollando enfocado
+especializado experiencia aplicaciones aplicación productos producto soluciones herramientas
+proyectos sistemas plataforma plataformas`.split(/\s+/));
+
+const tokens = t => (t.toLowerCase()
+  // Los modelos escriben guiones no separables (U+2010/2011) y "end‑to‑end" no
+  // matcheaba el "end-to-end" de los hechos.
+  .replace(/[‐‑‒–]/g, '-')
+  .replace(/[‘’]/g, "'")
+  .replace(/[‘’]/g, "'")
+  .match(/[\p{L}\p{N}][\p{L}\p{N}+#.'-]*[\p{L}\p{N}+#]|[\p{L}\p{N}]/gu) || [])
+  .flatMap(w => [w, ...w.split(/[-.]/)]);
+
+// Raiz tosca para que "builds" o "designing" no se lean como palabras nuevas.
+const raiz = w => w.replace(/(ing|ed|es|s)$/, '');
+
+/**
+ * Devuelve las palabras del summary que no se sostienen con cv-facts.json.
+ * Lista vacia = el summary pasa. Exportada para testearla contra CVs reales.
+ */
+export function auditarSummary(summary, facts, lang = 'en') {
+  const base = new Set(tokens(`${facts.summary_base.en} ${facts.summary_base.es}`));
+  const corpus = new Set(tokens(JSON.stringify(facts)).flatMap(w => [w, raiz(w)]));
+  const problemas = new Set();
+  for (const w of tokens(summary)) {
+    if (INFLADAS.has(w)) { if (!base.has(w)) problemas.add(w); continue; }
+    // Un compuesto ("ai-enabled", "back-ends") se juzga por sus partes, que
+    // tokens() ya agrega sueltas.
+    if (/[-.]/.test(w) && !corpus.has(w)) continue;
+    if (/^\d/.test(w)) { if (!corpus.has(w)) problemas.add(w); continue; }
+    if (PROSA.has(w) || corpus.has(w) || corpus.has(raiz(w))) continue;
+    problemas.add(w);
+  }
+  return [...problemas];
+}
+
 // ── Validación determinística post-LLM ───────────────────────────────────────
 export function validate(selection, facts, lang) {
   const { skillIds, bulletIds, projectIds } = buildIndexes(facts);
@@ -198,6 +261,21 @@ export function validate(selection, facts, lang) {
     }
   } else {
     selection.summary = facts.summary_base[lang] || facts.summary_base.en;
+  }
+
+  // Auditoria de datos inventados. La lista negra de arriba solo atrapa
+  // tecnologias que alguien anoto de antemano, y el summary es el unico texto
+  // libre del CV: todo lo demas son ids validados. Revisando los 39 CVs de
+  // cv-out aparecieron "expert in TypeScript", "robust testing, CI pipelines" y
+  // "monitoring and error handling", nada de eso en cv-facts.json, y uno de esos
+  // CVs se envio. Aca se invierte la logica: cada palabra tiene que estar en los
+  // hechos o ser prosa generica; si no, vuelve summary_base.
+  if (selection.summary) {
+    const inventado = auditarSummary(selection.summary, facts, lang);
+    if (inventado.length > 0) {
+      errors.push(`summary no respaldado por cv-facts: ${inventado.join(', ')} — replaced with summary_base`);
+      selection.summary = facts.summary_base[lang] || facts.summary_base.en;
+    }
   }
 
   // Fix 1: summary floor — mínimo 25 palabras
@@ -370,6 +448,18 @@ async function htmlToPDF(html, outPath) {
   }
 }
 
+// Lo que lee un ATS es el texto extraido del PDF, no lo que se ve. Si el PDF
+// sale en dos paginas o sin nombre y mail legibles, se tira el error y el
+// applier cae al CV estatico en vez de subir un archivo roto sin enterarse.
+async function verificarPDF(outPath, facts) {
+  const pdfParse = require('pdf-parse');
+  const { numpages, text } = await pdfParse(readFileSync(outPath));
+  const plano = text.replace(/\s+/g, ' ');
+  const faltan = [facts.identity.name, facts.identity.email].filter(x => !plano.includes(x));
+  if (numpages !== 1) throw new Error(`PDF con ${numpages} paginas, se esperaba 1`);
+  if (faltan.length) throw new Error(`PDF sin texto legible para ATS: falta ${faltan.join(', ')}`);
+}
+
 // ── Slug para nombre de archivo ───────────────────────────────────────────────
 function slugify(str) {
   return (str || 'unknown')
@@ -458,6 +548,7 @@ async function _tailorCV(job) {
       mkdirSync(CV_OUT_DIR, { recursive: true });
       const outPath = join(CV_OUT_DIR, `${job.id}-${slugify(job.company)}.pdf`);
       await htmlToPDF(html, outPath);
+      await verificarPDF(outPath, facts);
 
       console.log(`[cv-tailor] PDF generado: ${outPath}`);
       return { path: outPath, role, lang };
