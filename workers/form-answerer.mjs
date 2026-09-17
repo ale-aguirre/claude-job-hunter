@@ -301,7 +301,7 @@ export function classifyField(field, job) {
   if (/github/i.test(low)) return PROFILE.github ? { kind: 'text', value: PROFILE.github } : { kind: 'skip', reason: 'no github in profile' };
   if (/portfolio|personal website/i.test(low)) return PROFILE.portfolio ? { kind: 'text', value: PROFILE.portfolio } : { kind: 'skip', reason: 'no portfolio in profile' };
   // PROFILE.city trae "Ciudad, Pais": en un campo "City" va solo la ciudad.
-  if (/^city$/i.test(low.trim())) return PROFILE.city ? { kind: 'text', value: PROFILE.city.split(',')[0].trim() } : { kind: 'skip', reason: 'no city in profile' };
+  if (/^city\s*\*?$/i.test(low.trim())) return PROFILE.city ? { kind: 'text', value: PROFILE.city.split(',')[0].trim() } : { kind: 'skip', reason: 'no city in profile' };
 
   // Fecha de inicio / preaviso. Alexis esta en relacion de dependencia, asi que
   // "immediately" seria falso: hay preaviso real que cumplir. Un mes es el plazo
@@ -359,6 +359,12 @@ export function classifyField(field, job) {
   // aparecen dentro de preguntas que tienen su propia regla: el 7/9 se comio la
   // de sponsorship ("...to remain in your current location?") y le contesto
   // "Argentina" en vez de "No". Lo general va despues de lo especifico.
+  // Mayoria de edad. Ashby lo pide como botones Yes/No obligatorios y el 17/9
+  // bloqueo la postulacion a Supabase por no tener regla.
+  if (/over the age of 18|18 years or older|at least 18 years|are you 18/i.test(low)) {
+    return { kind: 'option', value: 'Yes' };
+  }
+
   // Country / location questions. Ashby's system location field is literally
   // just labelled "Location" — confirmed live on Braintrust/g2i, both required.
   //
@@ -776,6 +782,14 @@ export async function fillAllRequiredFields(page, job) {
     // reportado como 'deterministic' con 'fill() failed', o sea en silencio.
     if (cls.kind === 'text' && cls.optionFallback && ['select', 'combobox', 'radio-group', 'yesno-buttons'].includes(field.type)) {
       cls = { kind: 'option', value: cls.optionFallback };
+    }
+
+    // A la inversa del caso de arriba: una respuesta de opcion sobre un input de
+    // texto libre. setCombobox no tiene lista para elegir y devolvia
+    // "unanswerable" (Supabase, "Country of Residence", 17/9). typeHint es el
+    // texto que corresponde escribir ahi.
+    if (cls.kind === 'option' && (field.type === 'text' || field.type === 'textarea')) {
+      cls = { kind: 'text', value: cls.typeHint || cls.value };
     }
 
     if (cls.kind === 'text') {
