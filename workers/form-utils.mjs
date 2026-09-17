@@ -1,7 +1,12 @@
 /**
  * form-utils.mjs — Shared Playwright form helpers: fill, upload CV, submit, click apply
  */
+import { mkdirSync } from 'fs';
 import { PROFILE, CV_PATH } from './config.mjs';
+
+// Mismo directorio que usa apply-ats.mjs para FILLCHECK_DIR. /tmp es de Mac,
+// en Windows no existe.
+const PROOF_DIR = process.env.FILLCHECK_DIR || 'C:/tmp';
 
 /** Selectors tried (in order) to find a submit/apply button */
 export const SUBMIT_SELECTORS = [
@@ -109,7 +114,8 @@ export async function clickSubmit(page) {
 export async function verifySubmission(page, jobInfo) {
   await page.waitForTimeout(5000);
 
-  const screenshotPath = `/tmp/proof_${(jobInfo.company || 'unknown').replace(/[^a-z0-9]/gi, '_').slice(0, 30)}_${Date.now()}.png`;
+  try { mkdirSync(PROOF_DIR, { recursive: true }); } catch {}
+  const screenshotPath = `${PROOF_DIR}/proof_${(jobInfo.company || 'unknown').replace(/[^a-z0-9]/gi, '_').slice(0, 30)}_${Date.now()}.png`;
   try { await page.screenshot({ path: screenshotPath, fullPage: true }); } catch {}
 
   const pageText = await page.textContent('body').catch(() => '');

@@ -2,16 +2,35 @@
  * cleanup-db.mjs — Archive jobs in DB that don't match dev profile
  * Run: node cleanup-db.mjs
  */
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const Database = require('better-sqlite3');
+import { openDB } from './db-utils.mjs';
 
-const db = new Database('applications.db');
-db.pragma('busy_timeout = 15000');   // ver el comentario en openDB de db-utils
+const db = openDB();
+
+/**
+ * Escapa caracteres especiales de regex para meter un string literal adentro
+ * de un patron.
+ */
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Matchea `phrase` como palabra o frase completa dentro de `text`, no como
+ * substring. Antes `t.includes('insurance')` archivaba "Software Engineer,
+ * Insurance Platform" por 'insurance' (correcto, ahi es palabra completa),
+ * pero tambien cosas como 'legal' adentro de "Legalzoom Engineer" o 'nurse'
+ * adentro de "Nursery App Developer", que son falsos positivos de substring.
+ * \b de JS no reconoce letras con tilde/unicode como parte de palabra, por
+ * eso los bordes se arman a mano con \p{L}\p{N} (requiere flag 'u').
+ */
+function matchesPhrase(text, phrase) {
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegex(phrase)}(?![\\p{L}\\p{N}])`, 'iu');
+  return re.test(text);
+}
 
 const EXCL = [
   'security engineer', 'customer support', 'sales rep', 'marketing manager',
-  'animator', 'vfx', 'account executive', 'recruiter', 'staff engineer',
+  'animator', 'vfx', 'account executive', 'recruiter',
   'solutions engineer', 'enterprise support', 'legal', 'lawyer', 'paralegal',
   'accountant', 'physician', 'nurse', 'gameplay', '3d artist', 'concept artist',
   'social media manager', 'copywriter', 'seo specialist', 'sales development',
@@ -32,10 +51,13 @@ let archived = 0;
 
 for (const j of found) {
   const t = j.title.toLowerCase();
-  const excluded = EXCL.some(k => t.includes(k));
-  const relevant = DEV.some(k => t.includes(k));
+  const excluded = EXCL.some(k => matchesPhrase(t, k));
+  const relevant = DEV.some(k => matchesPhrase(t, k));
   if (excluded || !relevant) {
-    db.prepare("UPDATE applications SET status='archived', notes='AUTO: role not matching dev profile' WHERE id=?").run(j.id);
+    // notes es metadata del scout (se refresca cada vez que reencuentra el
+    // aviso); el veredicto del cleanup va en su propia columna, igual que
+    // markResult en db-utils.
+    db.prepare("UPDATE applications SET status='archived', veredicto='AUTO: role not matching dev profile' WHERE id=?").run(j.id);
     archived++;
     if (archived <= 20) console.log(`  ARCHIVED: ${j.company} — ${j.title}`);
   }

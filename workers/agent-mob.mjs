@@ -193,7 +193,10 @@ function markBlocked(jobId, reason) {
 }
 
 function alreadyRegistered(jobId) {
-  const r = db.prepare('SELECT notes FROM applications WHERE id = ?').get(jobId);
+  // Tiene que leer veredicto, que es donde markRegistered/markBlocked escriben
+  // arriba. Antes seleccionaba notes y despues chequeaba .veredicto (undefined
+  // siempre), asi que esta funcion nunca detectaba un registro previo.
+  const r = db.prepare('SELECT veredicto FROM applications WHERE id = ?').get(jobId);
   return r?.veredicto?.startsWith('MOB_REGISTERED:') || false;
 }
 
