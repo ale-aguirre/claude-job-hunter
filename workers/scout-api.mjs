@@ -393,24 +393,17 @@ async function scrapeRemoteOK() {
 
 // ─── 3. GREENHOUSE ──────────────────────────────────────────────────────────
 // Large list of companies — filtered dynamically by isRelevant() based on the user's CV
+// Las tres listas de boards se verificaron una por una contra su API el 17/9.
+// Estaban escritas a mano y 67 de 108 daban 404: la empresa se habia mudado de
+// ATS o nunca estuvo en ese. Como el scraper hacia `if (!r.ok) continue`, el
+// balance decia "Greenhouse sin novedades" y nunca que 37 de sus 48 empresas no
+// existian. Diecinueve se recuperaron en su ATS real (notion, supabase, cohere,
+// plaid, temporal, sentry y otras pasaron a Ashby), y las 43 que no aparecen en
+// ninguno de los tres se sacaron. Ahora un board que responde error se reporta
+// en el balance de fuentes, para que la lista no se vuelva a pudrir en silencio.
 const GREENHOUSE_BOARDS = [
-  // Dev tools (frontend/fullstack roles frecuentes)
-  'notion', 'figma', 'vercel', 'supabase', 'liveblocks', 'convex',
-  'render', 'railway', 'stytch', 'workos',
-  // Fintech/HR remote-friendly
-  'plaid', 'deel', 'remote', 'oyster', 'gusto',
-  // Dev platforms
-  'gitlab', 'sentry', 'zapier', 'airtable', 'retool', 'webflow', 'framer',
-  // LATAM-friendly
-  'auth0', 'globant', 'mercadolibre',
-  // AI companies (creciendo, contratan fullstack)
-  'huggingface', 'cohere', 'runway',
-  // Europa (UK/EU startups y scaleups remotas)
-  'hotjar', 'pitch', 'pleo', 'contentful', 'personio', 'typeform',
-  'factorial', 'wise', 'monzo', 'revolut', 'loom', 'doist',
-  'remote-com', 'whereby', 'miro', 'pipedrive', 'toggl',
-  // Oceanía / Asia-Pacific (remotas globales)
-  'atlassian', 'canva', 'dovetail',
+  'vercel', 'figma', 'gitlab', 'webflow', 'airtable', 'typeform',
+  'contentful', 'gusto', 'remote', 'wise', 'monzo', 'netlify',
 ];
 
 async function scrapeGreenhouse() {
@@ -419,7 +412,7 @@ async function scrapeGreenhouse() {
     try {
       // ?content=true: el listado sin este param no trae el cuerpo del aviso.
       const r = await fetch(`https://boards-api.greenhouse.io/v1/boards/${board}/jobs?content=true`);
-      if (!r.ok) continue;
+      if (!r.ok) { boardsCaidos.push(`greenhouse/${board}(${r.status})`); continue; }
       const d = await r.json();
       for (const job of (d.jobs || [])) {
         const loc = (job.location?.name || '').toLowerCase();
@@ -434,7 +427,7 @@ async function scrapeGreenhouse() {
         const postedAt = job.updated_at || null;
         if (upsertJob(board, job.title, url, 'greenhouse', notes, postedAt, job.content)) count++;
       }
-    } catch { /* skip */ }
+    } catch (e) { boardsCaidos.push(`greenhouse/${board}(${String(e.message).slice(0, 30)})`); }
     await new Promise(r => setTimeout(r, 200));
   }
   console.log(`  Greenhouse: +${count} new`);
@@ -445,22 +438,19 @@ async function scrapeGreenhouse() {
 // Ashby is the ATS of choice for modern startups (especially LATAM-friendly remote ones)
 // Only boards confirmed to have jobs via API (404s are skipped anyway but this keeps the list clean)
 const ASHBY_BOARDS = [
-  // Dev tools with React/TS roles
-  'linear', 'plain', 'apify', 'infisical', 'neon', 'clerk',
-  'raycast', 'convex-dev', 'checkly', 'modal', 'cursor',
-  // Fintech/remote
-  'ramp', 'deel', 'oyster', 'vanta', 'column',
+  // Dev tools
+  'linear', 'plain', 'apify', 'infisical', 'neon', 'clerk', 'raycast',
+  'convex-dev', 'checkly', 'modal', 'cursor', 'inngest', 'supabase',
+  'sentry', 'posthog', 'resend', 'render', 'railway', 'workos', 'stytch',
+  'sanity', 'temporal', 'notion', 'zapier', 'miro', 'dovetail',
+  // Fintech / remote
+  'ramp', 'deel', 'oyster', 'vanta', 'column', 'plaid', 'pleo',
   // Talent platforms (LATAM-friendly)
-  'g2i', 'andela', 'braintrust',
+  'g2i', 'andela', 'braintrust', 'lemon-io',
   // AI companies
-  'perplexity', 'openai', 'cognition', 'runway',
-  // Others worth trying
-  'inngest', 'trigger', 'highlight', 'june', 'statsig',
-  // Europa — startups que usan Ashby
-  'lemon-io', 'sketch', 'localyze', 'leapsome', 'kenjo',
-  'smallpdf', 'userleap', 'passionfroot', 'mobbin', 'rows',
-  // Asia-Pacific
-  'roboflow', 'whiterabbitneo',
+  'perplexity', 'openai', 'cognition', 'runway', 'cohere', 'roboflow',
+  // Europa
+  'leapsome', 'smallpdf', 'passionfroot',
 ];
 
 async function scrapeAshby() {
@@ -470,7 +460,7 @@ async function scrapeAshby() {
       const r = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${board}`, {
         headers: { 'Accept': 'application/json' },
       });
-      if (!r.ok) continue;
+      if (!r.ok) { boardsCaidos.push(`ashby/${board}(${r.status})`); continue; }
       const d = await r.json();
       for (const job of (d.jobs || [])) {
         const ashbyLoc = (job.location || '').toLowerCase();
@@ -483,7 +473,7 @@ async function scrapeAshby() {
         const postedAt = job.publishedAt || job.updatedAt || null;
         if (upsertJob(board, job.title, url, 'ashby', notes, postedAt, job.descriptionPlain)) count++;
       }
-    } catch { /* skip */ }
+    } catch (e) { boardsCaidos.push(`ashby/${board}(${String(e.message).slice(0, 30)})`); }
     await new Promise(r => setTimeout(r, 150));
   }
   console.log(`  Ashby: +${count} new`);
@@ -492,18 +482,20 @@ async function scrapeAshby() {
 
 // ─── 5. LEVER ───────────────────────────────────────────────────────────────
 const LEVER_BOARDS = [
-  'netlify', 'temporal', 'neon-1', 'inngest', 'trigger', 'qstash',
-  'upstash', 'posthog', 'cal', 'infisical', 'dub', 'documenso',
-  'astro', 'prisma', 'drizzle', 'neon', 'sanity',
-  'resend', 'loops', 'plainapp',
+  'neon', 'pipedrive',
 ];
+
+// Boards que respondieron error en esta corrida. Se imprimen y se guardan en el
+// balance de fuentes: un 404 significa que la empresa se mudo de ATS o que el
+// slug esta mal, y no hay que esperar meses para enterarse.
+const boardsCaidos = [];
 
 async function scrapeLever() {
   let count = 0;
   for (const board of LEVER_BOARDS) {
     try {
       const r = await fetch(`https://api.lever.co/v0/postings/${board}?mode=json`);
-      if (!r.ok) continue;
+      if (!r.ok) { boardsCaidos.push(`lever/${board}(${r.status})`); continue; }
       const jobs = await r.json();
       for (const job of (Array.isArray(jobs) ? jobs : [])) {
         const loc = (job.categories?.location || job.workplaceType || '').toLowerCase();
@@ -513,7 +505,7 @@ async function scrapeLever() {
         const postedAt = job.createdAt ? new Date(job.createdAt).toISOString() : null;
         if (upsertJob(board, job.text, job.hostedUrl || `https://jobs.lever.co/${board}/${job.id}`, 'lever', notes, postedAt)) count++;
       }
-    } catch { /* skip */ }
+    } catch (e) { boardsCaidos.push(`lever/${board}(${String(e.message).slice(0, 30)})`); }
     await new Promise(r => setTimeout(r, 200));
   }
   console.log(`  Lever: +${count} new`);
@@ -1195,15 +1187,18 @@ for (const a of rotas) console.log(`     ERR   ${a.nombre} — ${a.error}`);
 if (dedup.length) console.log(`     0     sin novedades: ${dedup.map(a => a.nombre).join(', ')}`);
 if (mudas.length) console.log(`     ⚠     NUNCA aportaron un aviso: ${mudas.map(a => a.nombre).join(', ')}`);
 
+if (boardsCaidos.length) console.log(`     ⚠     boards que respondieron error: ${boardsCaidos.join(' ')}`);
+
 const fuenteSummary = [
   vivas.map(a => `${a.nombre}=${a.n}`).join(' '),
   rotas.length ? `ERROR: ${rotas.map(a => `${a.nombre}(${a.error})`).join(' ')}` : '',
+  boardsCaidos.length ? `BOARDS CAIDOS: ${boardsCaidos.join(' ')}` : '',
   mudas.length ? `NUNCA APORTARON: ${mudas.map(a => a.nombre).join(',')}` : '',
   dedup.length ? `sin novedades: ${dedup.map(a => a.nombre).join(',')}` : '',
 ].filter(Boolean).join(' | ');
 
 db.prepare('INSERT INTO agent_log (agent,action,detail,status) VALUES (?,?,?,?)').run(
-  'ScoutAPI', 'fuentes', fuenteSummary, (rotas.length || mudas.length) ? 'warn' : 'ok'
+  'ScoutAPI', 'fuentes', fuenteSummary, (rotas.length || mudas.length || boardsCaidos.length) ? 'warn' : 'ok'
 );
 
 // El balance del filtro va SIEMPRE, aunque el resultado sea 0. Justamente
