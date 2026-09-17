@@ -99,9 +99,27 @@ function normalizarTitulo(t) {
     .replace(/\s+/g, ' ');
 }
 
+/**
+ * Familia de rol. El score de rules.mjs premia remoto, empresa y plataforma, y
+ * con SCORE_CONFIABLE en 3 eso alcanzaba para postular sin mirar que puesto era.
+ * Al sumar boards de empresas grandes el 17/9, 27 de los 51 avisos elegibles
+ * eran "Postgres Deployment Engineer (Nix)", "FinOps Engineer", "Security
+ * Engineer" o "Infra Engineer: Baremetal", y el tope por empresa se gastaba ahi.
+ * ALEXIS.md es explicito: sin backend real, sin Docker ni AWS, sin research.
+ *
+ * FUERA_DE_PERFIL_RE veta siempre. FAMILIA_RE exige que el titulo nombre algo
+ * que el hace (web, full stack, IA, agentes, SDK de JS). Medido contra 281
+ * postulaciones historicas: lo que habria descartado son backends en Go, Ruby,
+ * C o Rust, arquitectos, research y roles que no son de ingenieria.
+ * "AI Deployment Engineer" queda adentro: en OpenAI es un rol de integracion.
+ */
+const FUERA_DE_PERFIL_RE = /\b(infra(structure)?|devops|sre|site reliability|security|finops|release engineer|performance engineer|(?<!ai )deployment engineer|postgres|database|dba|data engineer|networking|storage|baremetal|bare metal|kernel|compiler|solutions? architect|architect|pre-?sales|sales|account (executive|manager)|customer success|support engineer|leader|recruit\w*|designer|researcher|scientist|analyst|embedded|firmware|hardware|qa engineer|test engineer)\b/i;
+const FAMILIA_RE = /\b(full[\s-]?stack|front[\s-]?end|frontend|web|product engineer|software (engineer|developer)|developer|ai|llm|agent\w*|genai|generative|machine learning|ml|prompt|automation|javascript|typescript|react|node|next\.?js|sdk|forward deployed|applied|integration|tooling|evals?)\b/i;
+
 function isRelevantTitle(title = '', score = 0) {
   const t = title.toLowerCase();
   if (ROLE_EXCLUDE_RE.test(t)) return false;
+  if (FUERA_DE_PERFIL_RE.test(t) || !FAMILIA_RE.test(t)) return false;
   if (EXCLUDE_KEYWORDS.some(k => t.includes(k.toLowerCase()))) return false;
   if (score >= SCORE_CONFIABLE) return true;
   const normalizado = normalizarTitulo(t);
