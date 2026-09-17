@@ -113,15 +113,24 @@ export function upsertJob(db, { company, title, url, source, status = 'found', n
  */
 export function markResult(db, { id, url, company, title, source = 'direct', platform = 'direct' }, status, note) {
   const n = String(note).slice(0, 500);
+  // applied_at es la fecha en que el scout encontro el aviso, no cuando se
+  // postulo de verdad. Cuando el applier confirma un envio hay que dejar
+  // sent_at, sino las postulaciones reales del bot quedaban sin fecha propia
+  // de envio. COALESCE para no pisarlo si ya se habia guardado antes.
+  const sentAtSet = status === 'applied' ? ", sent_at=COALESCE(sent_at, datetime('now'))" : '';
   if (id) {
-    db.prepare("UPDATE applications SET status=?, veredicto=?, updated_at=datetime('now') WHERE id=?")
+    db.prepare(`UPDATE applications SET status=?, veredicto=?, updated_at=datetime('now')${sentAtSet} WHERE id=?`)
       .run(status, n, id);
     return;
   }
   const ex = db.prepare('SELECT id FROM applications WHERE url=?').get(url);
   if (ex) {
-    db.prepare("UPDATE applications SET status=?, veredicto=?, updated_at=datetime('now') WHERE url=?")
+    db.prepare(`UPDATE applications SET status=?, veredicto=?, updated_at=datetime('now')${sentAtSet} WHERE url=?`)
       .run(status, n, url);
+  } else if (status === 'applied') {
+    db.prepare(
+      "INSERT INTO applications (company,title,url,source,status,veredicto,platform,sent_at) VALUES (?,?,?,?,?,?,?,datetime('now'))"
+    ).run(company ?? '', title ?? '', url, source, status, n, platform);
   } else {
     db.prepare(
       'INSERT INTO applications (company,title,url,source,status,veredicto,platform) VALUES (?,?,?,?,?,?,?)'

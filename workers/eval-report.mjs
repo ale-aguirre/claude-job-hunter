@@ -33,10 +33,13 @@ const confirmed = one(
 const unverified = one(
   "SELECT COUNT(*) n FROM applications WHERE status='applied' AND veredicto LIKE 'UNVERIFIED%'"
 ).n;
+// cold-email.mjs marca el envio con status='emailed', no con texto en notes
+// (eso nunca lo escribe ningun agente). emailed ya no es subconjunto de
+// applied — son dos status distintos — asi que no se resta de otherApplied.
 const emailed = one(
-  "SELECT COUNT(*) n FROM applications WHERE status='applied' AND (notes LIKE 'emailed%' OR notes LIKE '%| email:%')"
+  "SELECT COUNT(*) n FROM applications WHERE status='emailed'"
 ).n;
-const otherApplied = applied - confirmed - unverified - emailed;
+const otherApplied = applied - confirmed - unverified;
 
 // --- Delivery rate per channel ----------------------------------------------
 // Channel comes from the target URL, not from notes: notes only carry the
