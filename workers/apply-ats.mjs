@@ -251,6 +251,37 @@ function alreadyAppliedToday(company) {
   return total >= MAX_POR_EMPRESA_HISTORICO;
 }
 
+// ── Prioridad por tipo de empresa ────────────────────────────────────────────
+// Decision de Alexis (17/9): no se saca ninguna empresa, pero las grandes van
+// ultimas y solo se postula a ellas si sobran cupos del dia. Sus dos motivos:
+// la entrevista tecnica dura (algoritmos y live coding, que hoy no es su
+// terreno) y el ingles hablado, que es su bloqueante numero uno y en las
+// grandes son varias rondas habladas. Las agencias y marketplaces resuelven con
+// challenge escrito o take-home, y son de donde salieron las respuestas humanas
+// reales (GoFasti, The Agile Monkeys, g2i).
+const AGENCIAS = new Set(['g2i', 'braintrust', 'lemon-io', 'lemon.io', 'andela', 'oyster',
+  'toptal', 'turing', 'gun.io', 'x-team', 'arc', 'arc.dev', 'crossover', 'gofasti',
+  'the agile monkeys', 'micro1', 'mercor', 'proxify', 'deel talent']);
+const STARTUPS_CHICAS = new Set(['apify', 'checkly', 'plain', 'resend', 'smallpdf', 'passionfroot',
+  'leapsome', 'dovetail', 'inngest', 'stytch', 'column', 'pleo', 'infisical', 'convex',
+  'convex-dev', 'raycast', 'modal', 'neon', 'clerk']);
+const GRANDES = new Set(['openai', 'anthropic', 'cohere', 'cognition', 'perplexity', 'runway',
+  'gitlab', 'notion', 'zapier', 'miro', 'ramp', 'deel', 'plaid', 'supabase', 'sentry',
+  'posthog', 'temporal', 'vercel', 'figma', 'webflow', 'airtable', 'typeform', 'contentful',
+  'gusto', 'remote', 'wise', 'monzo', 'netlify', 'linear', 'cursor', 'railway', 'render',
+  'workos', 'sanity', 'vanta', 'google', 'meta', 'amazon', 'microsoft', 'apple', 'netflix',
+  'stripe', 'shopify', 'datadog', 'cloudflare', 'twilio', 'atlassian', 'hubspot', 'coinbase',
+  'robinhood', 'doordash', 'uber', 'airbnb', 'nvidia', 'databricks', 'snowflake', 'canva',
+  'mercadolibre', 'globant', 'epam', 'thoughtworks']);
+
+function prioridadEmpresa(company = '') {
+  const c = company.toLowerCase().trim();
+  if (AGENCIAS.has(c)) return 1;
+  if (STARTUPS_CHICAS.has(c)) return 2;
+  if (GRANDES.has(c)) return 4;
+  return 3;
+}
+
 // Note: getonbrd.com removed — requires active session cookies (use apply-from-db.mjs with Chrome mirror instead)
 //
 // El ORDER BY no es cosmético. Sin él SQLite devuelve las filas en orden de
@@ -285,9 +316,11 @@ const dbJobs = allDbJobs.filter(j => {
   if (!isRelevantTitle(j.title, j.score)) { fueraPorRol++; return false; }
   if (alreadyAppliedToday(j.company)) { fueraPorCupoEmpresa++; return false; }
   return true;
-});
+}).sort((a, b) => prioridadEmpresa(a.company) - prioridadEmpresa(b.company) || b.score - a.score);
 console.log(`Role filter: ${allDbJobs.length} ATS jobs → ${dbJobs.length} relevant`);
 console.log(`  descartados: ${fueraPorRol} por titulo/rol, ${fueraPorCupoEmpresa} por cupo diario de la empresa`);
+const porPrioridad = dbJobs.reduce((acc, j) => { acc[prioridadEmpresa(j.company)] = (acc[prioridadEmpresa(j.company)] || 0) + 1; return acc; }, {});
+console.log(`  cola por tipo de empresa: agencias ${porPrioridad[1] || 0}, startups ${porPrioridad[2] || 0}, resto ${porPrioridad[3] || 0}, grandes ${porPrioridad[4] || 0} (las grandes van ultimas)`);
 
 const targets = dbJobs.map(j => ({
   ...j,
