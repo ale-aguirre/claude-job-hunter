@@ -7,19 +7,26 @@
  *
  * Sources:
  *   Remote: Remotive, RemoteOK, Greenhouse, Lever, Himalayas, WeWorkRemotely,
- *           Contra, Torre, Arbeitnow, TheMuse, GetOnBrd, Jobicy, Groq LLM
+ *           Contra, Torre, Arbeitnow, TheMuse, GetOnBrd, Jobicy, Groq LLM,
+ *           Agentic Engineering Jobs (niche: agents/RAG/LLM roles)
  *   Local:  Bumeran (AR), Computrabajo (AR/LATAM), Workana (LATAM freelance)
  */
 import 'dotenv/config';
 import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import { getProfileKeywords } from './profile-extractor.mjs';
+import { limpiarDescripcion } from './db-utils.mjs';
 
 const require  = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
 
 const db       = new Database(fileURLToPath(new URL('applications.db', import.meta.url)));
+// Este worker abre su propia conexion (no pasa por openDB() de db-utils.mjs),
+// asi que la migracion de la columna description tiene que correr tambien
+// aca para no depender del orden en que se ejecuten los demas workers.
+try { db.exec(`ALTER TABLE applications ADD COLUMN description TEXT DEFAULT ''`); } catch {}
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 // ─── Job preferences from .env ─────────────────────────────────────────────
 const JOB_TYPE       = process.env.JOB_TYPE       || 'any';
@@ -59,7 +66,6 @@ const CUSTOM_QUERIES = (process.env.SEARCH_QUERIES || '').split('|').map(q => q.
 
 // Extra keywords from .env — user can add AI/agentic terms without CV regeneration
 const EXTRA_KEYWORDS = _extraKw;
-const ALL_SEARCH_TERMS = [...new Set([...SEARCH_TAGS, ...EXTRA_KEYWORDS])];
 if (EXTRA_KEYWORDS.length) console.log(`Extra keywords: ${EXTRA_KEYWORDS.join(', ')}`);
 
 // Tech stack exclusions — reject jobs focused on technologies not in the profile
@@ -88,6 +94,30 @@ function isExcluded(text = '') {
     || EXCLUDE_TERMS.some(r => t.includes(r));
 }
 
+// Desde dónde puede trabajar Alexis. Un aviso sin restricciones es abierto; uno
+// con restricciones sólo sirve si alguna lo incluye.
+const ELIGIBLE_LOCATIONS = [
+  'argentina', 'latam', 'latin america', 'south america', 'americas',
+  'worldwide', 'global', 'anywhere', 'international', 'remote',
+];
+
+/**
+ * ¿Puede postularse desde Argentina?
+ *
+ * Esto faltaba y costó caro. El 24/8 el aviso de Pavado entró con 9 puntos y
+ * quedó segundo en la lista de prioridades siendo "Remote, South Africa only".
+ * El scout nunca vio esa restricción porque el fetcher de Himalayas usaba el
+ * RSS, que no trae el campo, y guardaba la nota fija "Himalayas remote".
+ * Un aviso al que no podés aplicar no es un lead, es ruido con puntaje.
+ */
+function isEligibleLocation(restrictions = []) {
+  const list = (Array.isArray(restrictions) ? restrictions : [restrictions])
+    .filter(Boolean).map(s => String(s).toLowerCase());
+  if (!list.length) return true;                       // sin restricción declarada
+  if (list.some(l => EXCLUDE_REGIONS.some(r => l.includes(r)))) return false;
+  return list.some(l => ELIGIBLE_LOCATIONS.some(e => l.includes(e)));
+}
+
 // Salary filter patterns — reject low-pay jobs (< $2000/month)
 const LOW_SALARY_PATTERNS = [
   /\$\d{1,2}\/hr/i,                          // $8/hr, $15/hr (2-digit)
@@ -108,27 +138,105 @@ function hasLowSalary(text = '') {
   return false;
 }
 
+// ─── Contador de descartes ─────────────────────────────────────────────────
+// Regla que salió del 20/8: TODO filtro reporta cuánto tiró y por qué, no sólo
+// cuánto dejó pasar. Un scout que imprime "+0 new" se lee como "no hay nada
+// nuevo" cuando en realidad significa "descarté 99 y no te lo dije".
+const DROPPED = Object.create(null);
+let SEEN = 0;
+
+function drop(reason, sample = '') {
+  DROPPED[reason] ??= { count: 0, sample: '' };
+  DROPPED[reason].count++;
+  if (!DROPPED[reason].sample && sample) DROPPED[reason].sample = sample.slice(0, 70);
+  return false;
+}
+
+/**
+ * ¿Aparece `needle` como palabra completa dentro de `hay`?
+ *
+ * Mismo helper que rules.mjs, y está acá por la misma razón. Un `includes()` a
+ * secas sobre EXCLUDE_TECH descartaba en silencio media búsqueda:
+ *   'java'  matchea dentro de "Senior (Java)Script Developer"
+ *   'scala' matchea dentro de "Engineer, (Scala)bility"
+ *   'go'    matchea dentro de "(Go)lang" pero también dentro de "Django"
+ * Es la tercera vez que aparece este bug (antes fue 'cto' adentro de "proyecto").
+ */
+function hasWord(hay, needle) {
+  const esc = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(^|[^a-z0-9+#])${esc}([^a-z0-9+#]|$)`, 'i').test(hay);
+}
+
+// El título tiene que ser de un puesto técnico. Este es el gate real: separa
+// dev de no-dev, que es lo único que hay que decidir acá.
+// Que un titulo "suene a dev". Se suman las senales de IA generativa: Alexis
+// entrena LoRAs y arma pipelines de generacion en LadyNuggets, y sin esto
+// "Generative Media Engineer" o "AI Artist" morian aca con el motivo "titulo no
+// suena a dev", que es el descarte mas grande del filtro.
+const DEV_SIGNAL = /engineer|developer|desarrollador|programador|full[ -]?stack|front[ -]?end|back[ -]?end|swe|software|tech lead|architect|generative|diffusion|prompt engineer|ai (artist|illustrator|animator)|ai art/i;
+
+/**
+ * ¿Este aviso entra al pool?
+ *
+ * ANTES esta función exigía que el aviso contuviera literalmente una de las
+ * frases de búsqueda ('ai agent', 'llm engineer', 'mcp server'...). Medido el
+ * 20/8 sobre RemoteOK: de 100 avisos, 98 se caían por esa sola línea. Se
+ * perdieron cosas como "Senior Software Engineer Case Execution" sólo porque
+ * el aviso no escribía la frase exacta.
+ *
+ * El error de diseño era usar una PREFERENCIA como si fuera un REQUISITO. Que
+ * el puesto sea de agentes/LLM es algo deseable, no excluyente, y eso ya está
+ * expresado donde corresponde — en BOOST_HIGH de rules.mjs, que ordena el
+ * ranking. Acá sólo se decide si es un aviso de desarrollo que Alexis puede
+ * tomar. El orden lo pone el score, no el filtro.
+ */
 function isRelevant(title = '', tags = [], notes = '') {
-  const combined = `${title} ${tags.join(' ')} ${notes}`.toLowerCase();
+  SEEN++;
+  const combined  = `${title} ${tags.join(' ')} ${notes}`.toLowerCase();
   const titleOnly = title.toLowerCase();
 
-  // Reject if low salary detected
-  if (hasLowSalary(combined)) return false;
+  if (!titleOnly.trim()) return drop('titulo vacio');
+  if (hasLowSalary(combined)) return drop('sueldo bajo', title);
 
-  // Reject if title is dominated by excluded tech stack
-  if (EXCLUDE_TECH.some(t => titleOnly.includes(t))) return false;
+  const badTech = EXCLUDE_TECH.find(t => hasWord(titleOnly, t));
+  if (badTech) return drop(`stack excluido (${badTech})`, title);
 
-  // Reject non-dev roles
-  if (EXCLUDE_ROLES.some(r => titleOnly.includes(r))) return false;
+  // hasWord y no includes, igual que la linea de arriba con EXCLUDE_TECH: dos
+  // filtros consecutivos con criterios distintos. Es el bug que el README
+  // documenta como corregido —'java' adentro de 'JavaScript'— sobreviviendo aca.
+  // Medido sobre los 1889 titulos de la base cambia uno: "Singularity 6 -
+  // Software Engineers, Artists, Designers" se descartaba por 'artist' adentro
+  // de 'Artists', siendo un aviso de software engineers.
+  // Los roles de arte se excluyen SALVO que el titulo hable de IA generativa.
+  // "Concept Artist" no le sirve; "Generative AI Artist" o "AI Illustrator" si,
+  // porque es lo que hace en LadyNuggets. Decision de Alexis del 9/9.
+  const SENAL_IA = /(ai|a\.i\.|generative|genai|diffusion|llm)/i;
+  const ROLES_DE_ARTE = ['artist', 'illustrator', 'animator'];
+  const badRole = EXCLUDE_ROLES.find(r => {
+    if (!hasWord(titleOnly, r)) return false;
+    if (ROLES_DE_ARTE.includes(r) && SENAL_IA.test(titleOnly)) return false;
+    return true;
+  });
+  if (badRole) return drop(`rol no-dev (${badRole})`, title);
 
-  // Accept if matches search terms
-  if (!ALL_SEARCH_TERMS.some(k => combined.includes(k.toLowerCase()))) return false;
+  if (!DEV_SIGNAL.test(titleOnly)) return drop('titulo no suena a dev', title);
 
-  // El título tiene que oler a rol de desarrollo. Sin esto, los boards de
-  // empresas grandes (OpenAI, Cognition...) meten sourcers, SEO, supply chain
-  // y marketing solo porque el aviso dice "AI" en alguna parte.
-  const DEV_SIGNAL = /engineer|developer|desarrollador|programador|full[ -]?stack|front[ -]?end|swe|software|tech lead/i;
-  return DEV_SIGNAL.test(titleOnly);
+  return true;
+}
+
+/**
+ * Imprime el balance del filtro. Se llama una sola vez al final de la corrida.
+ */
+function reportDropped() {
+  const rows = Object.entries(DROPPED).sort((a, b) => b[1].count - a[1].count);
+  const tirados = rows.reduce((s, [, v]) => s + v.count, 0);
+  if (!SEEN) return '';
+  console.log(`\n📉 Filtro: vio ${SEEN} avisos, dejó pasar ${SEEN - tirados}, descartó ${tirados}`);
+  for (const [reason, v] of rows) {
+    const pct = ((v.count / SEEN) * 100).toFixed(1).padStart(5);
+    console.log(`   ${String(v.count).padStart(5)}  ${pct}%  ${reason}${v.sample ? `   ej. "${v.sample}"` : ''}`);
+  }
+  return rows.map(([r, v]) => `${r}=${v.count}`).join(' ');
 }
 
 // Regla de Alexis (2026-08-13): las empresas tier-FAANG/labs quedan afuera del
@@ -152,9 +260,14 @@ async function validateUrl(url, timeout = 3000) {
 
 // ─── DB helpers ────────────────────────────────────────────────────────────
 const insertStmt = db.prepare(`
-  INSERT OR IGNORE INTO applications (company,title,url,source,status,notes,platform,posted_at)
-  VALUES (?,?,?,?,?,?,?,?)
+  INSERT OR IGNORE INTO applications (company,title,url,source,status,notes,platform,posted_at,description)
+  VALUES (?,?,?,?,?,?,?,?,?)
 `);
+// El scout escribe SOLO metadata del board. El veredicto del applier vive en la
+// columna veredicto desde que se separaron, asi que refrescar notes ya no puede
+// borrarle nada a nadie. Antes si: un aviso marcado "BLOCKED: Job closed"
+// quedaba limpio despues de esta linea y ocho horas mas tarde el applier lo
+// reintentaba, tres veces por dia, indefinidamente.
 const updateStmt = db.prepare(`
   UPDATE applications SET notes=?, updated_at=datetime('now') WHERE url=? AND status='found'
 `);
@@ -174,7 +287,7 @@ function isSpecificJobUrl(url) {
   return !CAREER_PAGE_PATTERNS.some(p => p.test(url));
 }
 
-function upsertJob(company, title, url, platform, notes, postedAt = null) {
+function upsertJob(company, title, url, platform, notes, postedAt = null, description = '') {
   if (!url || !url.startsWith('http')) return false;
   if (!isSpecificJobUrl(url)) return false;
   if (EXCLUDE_COMPANIES.has((company || '').trim().toLowerCase())) return false;
@@ -190,8 +303,37 @@ function upsertJob(company, title, url, platform, notes, postedAt = null) {
     if (ex.status !== 'applied') updateStmt.run(notes, url);
     return false;
   }
+
+  // Segundo dedupe, por empresa + titulo. Este archivo tiene su propio upsertJob
+  // y no usa el de db-utils, que si lo hacia desde siempre: dos implementaciones
+  // de la misma funcion, y la que corre en produccion era la que menos filtra.
+  //
+  // Costo medido el 2/9: 41 duplicados en la cola. Las empresas republican la
+  // misma vacante con un id nuevo, asi que la URL cambia y el dedupe por URL no
+  // ve nada. Tres filas de "gitlab / Senior Backend Engineer" con titulo
+  // identico y tres ids distintos de Greenhouse, tres de "Bluelight Consulting /
+  // React Native Developer", tres de vanta. Postular tres veces al mismo puesto
+  // de la misma empresa no suma nada y ocupa tres cupos de la corrida.
+  //
+  // La lista de titulos genericos es la misma que usa db-utils: son avisos que
+  // por definicion se repiten entre empresas distintas y no deben deduplicarse.
+  const TITULOS_GENERICOS = ['from x bookmark', 'developer (hn who is hiring)', 'virtual assistant'];
+  const tituloLower = (title || '').toLowerCase();
+  if (!TITULOS_GENERICOS.some(g => tituloLower.includes(g))) {
+    const mismo = db.prepare(
+      "SELECT id FROM applications WHERE lower(company)=lower(?) AND lower(title)=lower(?) AND status NOT IN ('dead','archived')"
+    ).get(company, title);
+    if (mismo) {
+      // Se cuenta como descarte con razon propia, igual que el resto: un
+      // duplicado que desaparece sin dejar rastro es justo lo que hizo que estos
+      // 41 pasaran desapercibidos durante meses.
+      drop('duplicado (misma empresa y titulo)', title);
+      return false;
+    }
+  }
+
   // source = el board concreto. 'API' a secas escondía de dónde salió cada lead.
-  insertStmt.run(company, title, url, platform || 'API', 'found', notes, platform, postedAt);
+  insertStmt.run(company, title, url, platform || 'API', 'found', notes, platform, postedAt, limpiarDescripcion(description));
   return true;
 }
 
@@ -216,7 +358,7 @@ async function scrapeRemotive() {
         ].filter(Boolean).join(' | ');
         if (!isRelevant(job.title, job.tags || [], notes)) continue;
         const postedAt = job.publication_date || job.created_at || null;
-        if (upsertJob(job.company_name, job.title, job.url, 'remotive', notes, postedAt)) count++;
+        if (upsertJob(job.company_name, job.title, job.url, 'remotive', notes, postedAt, job.description)) count++;
       }
     } catch { /* skip */ }
     await new Promise(r => setTimeout(r, 500));
@@ -242,7 +384,7 @@ async function scrapeRemoteOK() {
       }
       const url = job.url.startsWith('http') ? job.url : `https://remoteok.com${job.url}`;
       const postedAt = job.date || null;
-      if (upsertJob(job.company || 'Unknown', job.position, url, 'remoteok', notes, postedAt)) count++;
+      if (upsertJob(job.company || 'Unknown', job.position, url, 'remoteok', notes, postedAt, job.description)) count++;
     }
   } catch { /* skip */ }
   console.log(`  RemoteOK: +${count} new`);
@@ -251,32 +393,26 @@ async function scrapeRemoteOK() {
 
 // ─── 3. GREENHOUSE ──────────────────────────────────────────────────────────
 // Large list of companies — filtered dynamically by isRelevant() based on the user's CV
+// Las tres listas de boards se verificaron una por una contra su API el 17/9.
+// Estaban escritas a mano y 67 de 108 daban 404: la empresa se habia mudado de
+// ATS o nunca estuvo en ese. Como el scraper hacia `if (!r.ok) continue`, el
+// balance decia "Greenhouse sin novedades" y nunca que 37 de sus 48 empresas no
+// existian. Diecinueve se recuperaron en su ATS real (notion, supabase, cohere,
+// plaid, temporal, sentry y otras pasaron a Ashby), y las 43 que no aparecen en
+// ninguno de los tres se sacaron. Ahora un board que responde error se reporta
+// en el balance de fuentes, para que la lista no se vuelva a pudrir en silencio.
 const GREENHOUSE_BOARDS = [
-  // Dev tools (frontend/fullstack roles frecuentes)
-  'notion', 'figma', 'vercel', 'supabase', 'liveblocks', 'convex',
-  'render', 'railway', 'stytch', 'workos',
-  // Fintech/HR remote-friendly
-  'plaid', 'deel', 'remote', 'oyster', 'gusto',
-  // Dev platforms
-  'gitlab', 'sentry', 'zapier', 'airtable', 'retool', 'webflow', 'framer',
-  // LATAM-friendly
-  'auth0', 'globant', 'mercadolibre',
-  // AI companies (creciendo, contratan fullstack)
-  'huggingface', 'cohere', 'runway',
-  // Europa (UK/EU startups y scaleups remotas)
-  'hotjar', 'pitch', 'pleo', 'contentful', 'personio', 'typeform',
-  'factorial', 'wise', 'monzo', 'revolut', 'loom', 'doist',
-  'remote-com', 'whereby', 'miro', 'pipedrive', 'toggl',
-  // Oceanía / Asia-Pacific (remotas globales)
-  'atlassian', 'canva', 'dovetail',
+  'vercel', 'figma', 'gitlab', 'webflow', 'airtable', 'typeform',
+  'contentful', 'gusto', 'remote', 'wise', 'monzo', 'netlify',
 ];
 
 async function scrapeGreenhouse() {
   let count = 0;
   for (const board of GREENHOUSE_BOARDS) {
     try {
-      const r = await fetch(`https://boards-api.greenhouse.io/v1/boards/${board}/jobs`);
-      if (!r.ok) continue;
+      // ?content=true: el listado sin este param no trae el cuerpo del aviso.
+      const r = await fetch(`https://boards-api.greenhouse.io/v1/boards/${board}/jobs?content=true`);
+      if (!r.ok) { boardsCaidos.push(`greenhouse/${board}(${r.status})`); continue; }
       const d = await r.json();
       for (const job of (d.jobs || [])) {
         const loc = (job.location?.name || '').toLowerCase();
@@ -289,9 +425,9 @@ async function scrapeGreenhouse() {
         const url   = `https://boards.greenhouse.io/${board}/jobs/${job.id}`;
         const notes = `Greenhouse/${board} | ${job.location?.name || 'Remote'}`;
         const postedAt = job.updated_at || null;
-        if (upsertJob(board, job.title, url, 'greenhouse', notes, postedAt)) count++;
+        if (upsertJob(board, job.title, url, 'greenhouse', notes, postedAt, job.content)) count++;
       }
-    } catch { /* skip */ }
+    } catch (e) { boardsCaidos.push(`greenhouse/${board}(${String(e.message).slice(0, 30)})`); }
     await new Promise(r => setTimeout(r, 200));
   }
   console.log(`  Greenhouse: +${count} new`);
@@ -302,22 +438,19 @@ async function scrapeGreenhouse() {
 // Ashby is the ATS of choice for modern startups (especially LATAM-friendly remote ones)
 // Only boards confirmed to have jobs via API (404s are skipped anyway but this keeps the list clean)
 const ASHBY_BOARDS = [
-  // Dev tools with React/TS roles
-  'linear', 'plain', 'apify', 'infisical', 'neon', 'clerk',
-  'raycast', 'convex-dev', 'checkly', 'modal', 'cursor',
-  // Fintech/remote
-  'ramp', 'deel', 'oyster', 'vanta', 'column',
+  // Dev tools
+  'linear', 'plain', 'apify', 'infisical', 'neon', 'clerk', 'raycast',
+  'convex-dev', 'checkly', 'modal', 'cursor', 'inngest', 'supabase',
+  'sentry', 'posthog', 'resend', 'render', 'railway', 'workos', 'stytch',
+  'sanity', 'temporal', 'notion', 'zapier', 'miro', 'dovetail',
+  // Fintech / remote
+  'ramp', 'deel', 'oyster', 'vanta', 'column', 'plaid', 'pleo',
   // Talent platforms (LATAM-friendly)
-  'g2i', 'andela', 'braintrust',
+  'g2i', 'andela', 'braintrust', 'lemon-io',
   // AI companies
-  'perplexity', 'openai', 'cognition', 'runway',
-  // Others worth trying
-  'inngest', 'trigger', 'highlight', 'june', 'statsig',
-  // Europa — startups que usan Ashby
-  'lemon-io', 'sketch', 'localyze', 'leapsome', 'kenjo',
-  'smallpdf', 'userleap', 'passionfroot', 'mobbin', 'rows',
-  // Asia-Pacific
-  'roboflow', 'whiterabbitneo',
+  'perplexity', 'openai', 'cognition', 'runway', 'cohere', 'roboflow',
+  // Europa
+  'leapsome', 'smallpdf', 'passionfroot',
 ];
 
 async function scrapeAshby() {
@@ -327,7 +460,7 @@ async function scrapeAshby() {
       const r = await fetch(`https://api.ashbyhq.com/posting-api/job-board/${board}`, {
         headers: { 'Accept': 'application/json' },
       });
-      if (!r.ok) continue;
+      if (!r.ok) { boardsCaidos.push(`ashby/${board}(${r.status})`); continue; }
       const d = await r.json();
       for (const job of (d.jobs || [])) {
         const ashbyLoc = (job.location || '').toLowerCase();
@@ -338,9 +471,9 @@ async function scrapeAshby() {
         const url   = job.jobUrl || job.jobPostingUrl || `https://jobs.ashbyhq.com/${board}/${job.id}`;
         const notes = `Ashby/${board} | ${job.location || 'Remote'} | ${job.employmentType || ''}`;
         const postedAt = job.publishedAt || job.updatedAt || null;
-        if (upsertJob(board, job.title, url, 'ashby', notes, postedAt)) count++;
+        if (upsertJob(board, job.title, url, 'ashby', notes, postedAt, job.descriptionPlain)) count++;
       }
-    } catch { /* skip */ }
+    } catch (e) { boardsCaidos.push(`ashby/${board}(${String(e.message).slice(0, 30)})`); }
     await new Promise(r => setTimeout(r, 150));
   }
   console.log(`  Ashby: +${count} new`);
@@ -349,18 +482,20 @@ async function scrapeAshby() {
 
 // ─── 5. LEVER ───────────────────────────────────────────────────────────────
 const LEVER_BOARDS = [
-  'netlify', 'temporal', 'neon-1', 'inngest', 'trigger', 'qstash',
-  'upstash', 'posthog', 'cal', 'infisical', 'dub', 'documenso',
-  'astro', 'prisma', 'drizzle', 'neon', 'sanity',
-  'resend', 'loops', 'plainapp',
+  'neon', 'pipedrive',
 ];
+
+// Boards que respondieron error en esta corrida. Se imprimen y se guardan en el
+// balance de fuentes: un 404 significa que la empresa se mudo de ATS o que el
+// slug esta mal, y no hay que esperar meses para enterarse.
+const boardsCaidos = [];
 
 async function scrapeLever() {
   let count = 0;
   for (const board of LEVER_BOARDS) {
     try {
       const r = await fetch(`https://api.lever.co/v0/postings/${board}?mode=json`);
-      if (!r.ok) continue;
+      if (!r.ok) { boardsCaidos.push(`lever/${board}(${r.status})`); continue; }
       const jobs = await r.json();
       for (const job of (Array.isArray(jobs) ? jobs : [])) {
         const loc = (job.categories?.location || job.workplaceType || '').toLowerCase();
@@ -370,7 +505,7 @@ async function scrapeLever() {
         const postedAt = job.createdAt ? new Date(job.createdAt).toISOString() : null;
         if (upsertJob(board, job.text, job.hostedUrl || `https://jobs.lever.co/${board}/${job.id}`, 'lever', notes, postedAt)) count++;
       }
-    } catch { /* skip */ }
+    } catch (e) { boardsCaidos.push(`lever/${board}(${String(e.message).slice(0, 30)})`); }
     await new Promise(r => setTimeout(r, 200));
   }
   console.log(`  Lever: +${count} new`);
@@ -380,27 +515,53 @@ async function scrapeLever() {
 // ─── 5. HIMALAYAS ───────────────────────────────────────────────────────────
 async function scrapeHimalayas() {
   let count = 0;
-  const searchQ = SEARCH_TAGS[0] || 'developer';
+  // La API JSON en vez del RSS. El RSS no trae locationRestrictions y por eso
+  // entraban avisos cerrados a otro país con la nota fija "Himalayas remote".
+  // Acá además viene el sueldo, el tipo de contrato y la seniority.
+  //
+  // Ojo, la API ignora ?q= — verificado el 24/8, 'react' y 'software engineer'
+  // devuelven el mismo feed de 103.870 avisos. Es un feed cronológico de todos
+  // los rubros, así que el filtrado es del lado nuestro y hay que paginar por
+  // cursor. El contador de descartes deja ver cuánto de esto es ruido.
+  let cursor = '';
   try {
-    const r = await fetch(`https://himalayas.app/jobs/rss?q=${encodeURIComponent(searchQ)}&remote=true`, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-    const xml   = await r.text();
-    const items = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-    for (const item of items.slice(0, 30)) {
-      const title   = item.match(/<title><!\[CDATA\[(.*?)\]\]>/)?.[1] || item.match(/<title>(.*?)<\/title>/)?.[1] || '';
-      const link    = item.match(/<link>(.*?)<\/link>/)?.[1] || '';
-      // El RSS de Himalayas no trae <author>, pero la empresa está en el slug
-      // de la URL: himalayas.app/companies/<empresa>/jobs/...
-      const slug = link.match(/himalayas\.app\/companies\/([^/]+)/)?.[1] || '';
-      const company = item.match(/<author>(.*?)<\/author>/)?.[1]
-        || (slug ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Unknown');
-      const pubDate = item.match(/<pubDate>(.*?)<\/pubDate>/)?.[1] || null;
-      const postedAt = pubDate ? new Date(pubDate).toISOString() : null;
-      if (!isRelevant(title, [])) continue;
-      if (upsertJob(company, title, link, 'himalayas', 'Himalayas remote', postedAt)) count++;
+    for (let page = 0; page < 3; page++) {
+      const url = `https://himalayas.app/jobs/api?limit=100${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`;
+      const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      cursor = data.nextCursor || '';
+
+      for (const job of (data.jobs || [])) {
+        const title = job.title || '';
+        const link  = job.applicationLink || job.guid || '';
+        const slug  = job.companySlug || '';
+        const company = job.companyName
+          || (slug ? slug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Unknown');
+
+        // isRelevant() primero porque es quien lleva la cuenta de avisos vistos.
+        // Si el chequeo de país corriera antes, el balance del filtro no cerraría.
+        if (!isRelevant(title, job.categories || [], job.excerpt || '')) continue;
+        const locs = job.locationRestrictions || [];
+        if (!isEligibleLocation(locs)) { drop(`pais no elegible (${locs.join('/') || 'sin dato'})`, title); continue; }
+
+        const salary = (job.minSalary && job.maxSalary)
+          ? `Salary: ${job.currency || 'USD'} ${job.minSalary}-${job.maxSalary}/${job.salaryPeriod || 'annual'}`
+          : '';
+        const notes = [
+          `Location: ${locs.length ? locs.join(', ') : 'sin restriccion'}`,
+          salary,
+          job.employmentType,
+          (job.seniority || []).join('/'),
+        ].filter(Boolean).join(' | ');
+
+        const postedAt = job.pubDate ? new Date(job.pubDate * 1000).toISOString() : null;
+        if (upsertJob(company, title, link, 'himalayas', notes, postedAt, job.description)) count++;
+      }
+      if (!cursor) break;
+      await new Promise(res => setTimeout(res, 400));
     }
-  } catch { /* skip */ }
+  } catch (e) { console.log(`  Himalayas: falló (${e.message})`); }
   console.log(`  Himalayas: +${count} new`);
   return count;
 }
@@ -514,7 +675,7 @@ async function scrapeTheMuse() {
       if (!url) continue;
       const notes = `TheMuse | ${(job.locations || []).map(l => l.name).join(', ') || 'Remote'}`;
       if (!isRelevant(job.name || '', [], notes)) continue;
-      if (upsertJob(job.company?.name || 'Unknown', job.name, url, 'themuse', notes)) count++;
+      if (upsertJob(job.company?.name || 'Unknown', job.name, url, 'themuse', notes, null, job.contents)) count++;
     }
   } catch { /* skip */ }
   console.log(`  TheMuse: +${count} new`);
@@ -557,7 +718,7 @@ async function scrapeJobicy() {
         const notes = `Jobicy | ${job.jobType || ''} | ${job.jobGeo || 'Remote'}${job.annualSalaryMin ? ` | $${job.annualSalaryMin}-${job.annualSalaryMax}` : ''}`;
         if (!isRelevant(job.jobTitle || '', job.jobIndustry || [], notes)) continue;
         const postedAt = job.pubDate || null;
-        if (upsertJob(job.companyName || 'Unknown', job.jobTitle, url, 'jobicy', notes, postedAt)) count++;
+        if (upsertJob(job.companyName || 'Unknown', job.jobTitle, url, 'jobicy', notes, postedAt, job.jobDescription)) count++;
       }
     } catch { /* skip */ }
     await new Promise(r => setTimeout(r, 400));
@@ -738,8 +899,9 @@ async function scrapeViaGroq() {
         method: 'POST',
         headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: GROQ_MODEL,
           max_tokens: 1500,
+          reasoning_effort: 'low',
           messages: [
             { role: 'system', content: 'Job market researcher. Return valid JSON arrays only with real URLs.' },
             { role: 'user',   content: p.prompt }
@@ -814,7 +976,7 @@ async function scrapeHNWhoIsHiring() {
         const postedAt = c.time ? new Date(c.time * 1000).toISOString() : null;
         const notes = `HN Who is Hiring | ${parts.slice(1, 4).join(' | ').slice(0, 100)}`;
 
-        if (upsertJob(company, title, jobUrl, 'hn-hiring', notes, postedAt)) count++;
+        if (upsertJob(company, title, jobUrl, 'hn-hiring', notes, postedAt, c.text)) count++;
       }
       await new Promise(r => setTimeout(r, 200));
     }
@@ -870,33 +1032,116 @@ async function scrapeJobgether() {
   return count;
 }
 
+// ─── 20. AGENTIC ENGINEERING JOBS (niche: agents/RAG/LLM) ────────────────────
+// Public REST API, OpenAPI 3.1, no API key. Rate limit is 30 req/60s per IP
+// (confirmed 2026-08-31 by reading /api/v1/openapi.json), so requests here go
+// out sequentially with a fixed delay — never in parallel — even though the
+// rest of the sources in FUENTES run concurrently against other domains.
+const AEJ_BASE      = 'https://agentic-engineering-jobs.com/api/v1';
+const AEJ_DELAY_MS  = 2200;  // ~27 req/min, margin under the 30/60s limit
+const AEJ_MAX_PAGES = 10;    // 465 remote listings / 50 per page as of 2026-08-31
+
+/**
+ * ¿Puede postularse Alexis desde Argentina? A diferencia de las otras fuentes,
+ * acá no hay que adivinar a partir de texto libre: la API expone geoRegion,
+ * countries y remoteScope como campos estructurados propios.
+ */
+function isAejEligible(job) {
+  if (job.geoRegion === 'global' || job.geoRegion === 'latam') return true;
+  if (job.remoteScope === 'global') return true;
+  if (Array.isArray(job.countries) && job.countries.includes('AR')) return true;
+  return false;
+}
+
+async function scrapeAgenticJobs() {
+  let count = 0;
+  try {
+    for (let page = 1; page <= AEJ_MAX_PAGES; page++) {
+      const r = await fetch(`${AEJ_BASE}/jobs?locationType=remote&sort=newest&page=${page}`, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'job-hunter-scout/1.0' },
+      });
+      if (r.status === 429) {
+        // Ya nos pasamos del límite documentado — no insistir, cortar la corrida.
+        console.log('  AgenticJobs: 429 rate limited, cortando corrida');
+        break;
+      }
+      if (!r.ok) break;
+      const d = await r.json();
+      const jobs = d.data || [];
+      for (const job of jobs) {
+        const title = job.title || '';
+        const tags  = [...(job.aiInfrastructure || []), ...(job.techStackTags || []), ...(job.agenticFrameworks || [])];
+        if (!isRelevant(title, tags, job.description || '')) continue;
+        if (!isAejEligible(job)) {
+          drop(`geo no elegible (${job.geoRegion || job.remoteScope || 'sin dato'})`, title);
+          continue;
+        }
+        const applyUrl = job.applyMethods?.find(m => m.type === 'url')?.value
+          || `https://agentic-engineering-jobs.com/jobs/${job.slug}`;
+        const salary = (job.salaryMin && job.salaryMax)
+          ? `Salary: ${job.salaryCurrency || 'USD'} ${job.salaryMin}-${job.salaryMax}`
+          : '';
+        const notes = [
+          `AgenticJobs | ${job.location || job.locationType || 'Remote'}`,
+          salary,
+          job.employmentType,
+          job.seniority,
+        ].filter(Boolean).join(' | ');
+        const postedAt = job.postedAt || null;
+        if (upsertJob(job.companyName || 'Unknown', title, applyUrl, 'agentic-jobs', notes, postedAt, job.description)) count++;
+      }
+      const total   = d.meta?.total ?? 0;
+      const perPage = d.meta?.per_page || jobs.length || 50;
+      if (!jobs.length || page * perPage >= total) break;
+      if (page < AEJ_MAX_PAGES) await new Promise(res => setTimeout(res, AEJ_DELAY_MS));
+    }
+  } catch (e) { console.log(`  AgenticJobs: falló (${e.message})`); }
+  console.log(`  AgenticJobs: +${count} new`);
+  return count;
+}
+
 // Google/Indeed/Career discovery moved to scout-browser.mjs (needs real browser, not fetch)
 
 // ─── RUN ──────────────────────────────────────────────────────────────────
-const results = await Promise.allSettled([
-  scrapeRemotive(),
-  scrapeRemoteOK(),
-  scrapeWeWorkRemotely(),
-  scrapeGreenhouse(),
-  scrapeLever(),
-  scrapeAshby(),
-  scrapeHimalayas(),
-  scrapeContra(),
-  scrapeTorre(),
+//
+// Cada fetcher va con su nombre al lado. Antes esto era un array anónimo de
+// llamadas y el total salía de `results.reduce((s, r) => s + (r.value || 0), 0)`:
+// una fuente que tiraba excepción quedaba en `status: 'rejected'`, su `value`
+// era undefined, el `|| 0` la convertía en cero y el error no se imprimía en
+// ningún lado. Nueve de las dieciocho fuentes llevaban meses aportando 0 avisos
+// —weworkremotely, contra, getonbrd, workana, europeremotely, jobgether,
+// bumeran, computrabajo y lever— y el único número visible era el total, que
+// seguía dando positivo gracias a ashby y greenhouse.
+//
+// Es el mismo agregado que escondía Arbeitnow: 60 enviadas, 0 confirmadas, y un
+// promedio sano. Una fuente que no aporta tiene que decirlo por su nombre.
+const FUENTES = [
+  ['remotive',        scrapeRemotive],
+  ['remoteok',        scrapeRemoteOK],
+  ['weworkremotely',  scrapeWeWorkRemotely],
+  ['greenhouse',      scrapeGreenhouse],
+  ['lever',           scrapeLever],
+  ['ashby',           scrapeAshby],
+  ['himalayas',       scrapeHimalayas],
+  ['contra',          scrapeContra],
+  ['torre',           scrapeTorre],
   // Arbeitnow disabled: 142 leads, 60 applied, 0 verifiable. Its listings are
   // German-market roles whose apply flow gives no success state to read back,
   // so every submission landed as UNVERIFIED. See docs/EVAL.md.
-  // scrapeArbeitnow(),
-  scrapeTheMuse(),
-  scrapeGetOnBrd(),
-  scrapeJobicy(),
-  scrapeWorkana(),
-  scrapeEuropeRemotely(),
-  scrapeJobgether(),
+  // ['arbeitnow',    scrapeArbeitnow],
+  ['themuse',         scrapeTheMuse],
+  ['getonbrd',        scrapeGetOnBrd],
+  ['jobicy',          scrapeJobicy],
+  ['workana',         scrapeWorkana],
+  ['europeremotely',  scrapeEuropeRemotely],
+  ['jobgether',       scrapeJobgether],
+  ['agentic-jobs',    scrapeAgenticJobs],
   // Local LATAM portals — always run (even without city, search nationally)
-  scrapeBumeran(),
-  scrapeComputrabajo(),
-]);
+  ['bumeran',         scrapeBumeran],
+  ['computrabajo',    scrapeComputrabajo],
+];
+
+const results = await Promise.allSettled(FUENTES.map(([, fn]) => fn()));
 
 // Sequential sources (rate-limited or heavier)
 const hnCount   = await scrapeHNWhoIsHiring();
@@ -906,11 +1151,62 @@ const hnCount   = await scrapeHNWhoIsHiring();
 // contra una API, no una pregunta a un modelo.
 const groqCount = 0;
 
-const total = results.reduce((s, r) => s + (r.value || 0), 0) + hnCount + groqCount;
-console.log(`\n✅ scout-api done: +${total} new jobs`);
+const aportes = FUENTES.map(([nombre], i) => {
+  const r = results[i];
+  return r.status === 'rejected'
+    ? { nombre, n: 0, error: String(r.reason?.message || r.reason).slice(0, 80) }
+    : { nombre, n: r.value || 0, error: null };
+});
+aportes.push({ nombre: 'hn-hiring', n: hnCount, error: null });
+
+const total = aportes.reduce((s, a) => s + a.n, 0) + groqCount;
+console.log(`
+✅ scout-api done: +${total} new jobs`);
+
+// Balance por fuente. Va SIEMPRE, igual que el del filtro: cuando el total es
+// bajo, lo que importa es saber cuál de las fuentes dejó de traer.
+const rotas = aportes.filter(a => a.error);
+const vivas = aportes.filter(a => a.n > 0).sort((a, b) => b.n - a.n);
+
+// "0 nuevos" en una corrida no dice nada: puede ser que la fuente ande bien y
+// ya estuviera todo deduplicado. Lo que sí es una señal es que una fuente no
+// haya aportado NUNCA una fila en toda la historia de la base. Sin esta
+// distinción, ocho fuentes rotas se escondían detrás del mismo cero que las
+// fuentes sanas de un día tranquilo.
+const historico = db.prepare('SELECT source, COUNT(*) n FROM applications GROUP BY source')
+  .all().reduce((acc, r) => (acc[r.source] = r.n, acc), {});
+
+const cero      = aportes.filter(a => !a.error && a.n === 0);
+const mudas     = cero.filter(a => !(historico[a.nombre] > 0));   // nunca trajo nada
+const dedup     = cero.filter(a =>   historico[a.nombre] > 0);    // anda, hoy no hubo nuevos
+
+console.log(`
+📊 Fuentes: ${vivas.length} aportaron, ${dedup.length} sin novedades, ${mudas.length} nunca aportaron, ${rotas.length} con error`);
+for (const a of vivas) console.log(`     +${String(a.n).padStart(4)}  ${a.nombre}`);
+for (const a of rotas) console.log(`     ERR   ${a.nombre} — ${a.error}`);
+if (dedup.length) console.log(`     0     sin novedades: ${dedup.map(a => a.nombre).join(', ')}`);
+if (mudas.length) console.log(`     ⚠     NUNCA aportaron un aviso: ${mudas.map(a => a.nombre).join(', ')}`);
+
+if (boardsCaidos.length) console.log(`     ⚠     boards que respondieron error: ${boardsCaidos.join(' ')}`);
+
+const fuenteSummary = [
+  vivas.map(a => `${a.nombre}=${a.n}`).join(' '),
+  rotas.length ? `ERROR: ${rotas.map(a => `${a.nombre}(${a.error})`).join(' ')}` : '',
+  boardsCaidos.length ? `BOARDS CAIDOS: ${boardsCaidos.join(' ')}` : '',
+  mudas.length ? `NUNCA APORTARON: ${mudas.map(a => a.nombre).join(',')}` : '',
+  dedup.length ? `sin novedades: ${dedup.map(a => a.nombre).join(',')}` : '',
+].filter(Boolean).join(' | ');
 
 db.prepare('INSERT INTO agent_log (agent,action,detail,status) VALUES (?,?,?,?)').run(
-  'ScoutAPI', 'scan_complete', `+${total} new jobs`, 'ok'
+  'ScoutAPI', 'fuentes', fuenteSummary, (rotas.length || mudas.length || boardsCaidos.length) ? 'warn' : 'ok'
+);
+
+// El balance del filtro va SIEMPRE, aunque el resultado sea 0. Justamente
+// cuando es 0 es cuando hace falta saber si no había nada o si se tiró todo.
+const dropSummary = reportDropped();
+
+db.prepare('INSERT INTO agent_log (agent,action,detail,status) VALUES (?,?,?,?)').run(
+  'ScoutAPI', 'scan_complete', `+${total} new jobs | vistos=${SEEN} | ${dropSummary}`, 'ok'
 );
 db.close();
 

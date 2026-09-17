@@ -56,7 +56,10 @@ function buildIndexes(facts) {
 
 // ── LLM call — extrae selección JSON ─────────────────────────────────────────
 export async function callTailorLLM(facts, job, role, lang) {
-  const jd = (job.notes || '').slice(0, 900);
+  // Fallback a notes: los avisos cargados antes de esta migracion no tienen
+  // description, y las fuentes que no la proveen (Lever, Contra, Torre, etc.)
+  // tampoco. Sin el fallback, esos jobs quedarian sin JD para el LLM.
+  const jd = (job.description || job.notes || '').slice(0, 3500);
 
   // Compact skill list para el prompt
   const skillList = facts.skills.map(s => `${s.id}:${s.label}`).join(', ');
@@ -120,12 +123,81 @@ Return JSON with this exact shape:
   "keywords_detected": [...]
 }`;
 
-  const raw = await callFast(system, user, 800);
+  // 800 no alcanzaba. El JSON de salida trae un summary de 30 a 45 palabras mas
+  // cuatro listas de ids, y gpt-oss descuenta su razonamiento del mismo
+  // presupuesto: la respuesta se cortaba a mitad del objeto y el parse moria con
+  // "Expected ',' or '}'" o directamente sin llave de cierre. El sintoma no era
+  // un error del modelo sino dos intentos fallidos y caida al CV estatico, o
+  // sea la funcion distintiva del proyecto apagandose sola.
+  const raw = await callFast(system, user, 2000);
 
   // Extrae JSON del response
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error(`No JSON in LLM response: ${raw.slice(0, 100)}`);
   return JSON.parse(match[0]);
+}
+
+// ── Auditoria del summary contra cv-facts.json ───────────────────────────────
+// Palabras que suben el nivel declarado. Se rechazan si summary_base no las usa,
+// aunque aparezcan en otro lado de los hechos.
+const INFLADAS = new Set(['expert', 'expertise', 'senior', 'proficient', 'proficiency',
+  'extensive', 'extensively', 'deep', 'deeply', 'seasoned', 'mastery', 'veteran',
+  'lead', 'principal', 'world-class', 'rigorous', 'robust', 'reliable', 'scalable',
+  'experto', 'experta', 'amplia', 'amplio', 'profunda', 'profundo', 'sólida', 'sólido']);
+
+// Prosa que no afirma nada verificable. Todo lo que no este aca ni en los hechos
+// se trata como afirmacion nueva: el error va hacia summary_base, que es real.
+const PROSA = new Set(`a an and or the of in on to for with from by at as such using via into
+over across after before since while who which that this its their my i i'm i've is are am be
+been has have having can do also both plus more most
+ai-focused focused focus specializing specialized specializes experienced passionate
+build builds built building builder deliver delivers delivered delivering create creates created
+creating design designs designed designing develop develops developed developing implement
+implements implemented implementing integrate integrates integrated integrating integration
+integrations incorporate incorporates incorporating conduct conducts conducting ship ships
+shipped shipping work works working worked emphasize emphasizes emphasizing leverage leverages
+leveraging combine combines combining apply applies applying enable enables enabled enabling
+power powered app apps application applications product products solution solutions feature
+features tool tools project projects system systems platform platforms pipeline pipelines
+modern end ends front back frontend frontends backend backends browser browsers year years
+remote remotely based evaluation evaluations experience experiences hands-on experiment
+experimenting experimentation developer engineer full-stack fullstack stack
+un una unos unas el la los las de del en con para por desde sobre y o que como mi mis su sus
+es son soy más tras entre años año remoto remota basado construyo construí construyendo diseño
+diseñé diseñando integro integré integrando desarrollo desarrollé desarrollando enfocado
+especializado experiencia aplicaciones aplicación productos producto soluciones herramientas
+proyectos sistemas plataforma plataformas`.split(/\s+/));
+
+const tokens = t => (t.toLowerCase()
+  // Los modelos escriben guiones no separables (U+2010/2011) y "end‑to‑end" no
+  // matcheaba el "end-to-end" de los hechos.
+  .replace(/[‐‑‒–]/g, '-')
+  .replace(/[‘’]/g, "'")
+  .replace(/[‘’]/g, "'")
+  .match(/[\p{L}\p{N}][\p{L}\p{N}+#.'-]*[\p{L}\p{N}+#]|[\p{L}\p{N}]/gu) || [])
+  .flatMap(w => [w, ...w.split(/[-.]/)]);
+
+// Raiz tosca para que "builds" o "designing" no se lean como palabras nuevas.
+const raiz = w => w.replace(/(ing|ed|es|s)$/, '');
+
+/**
+ * Devuelve las palabras del summary que no se sostienen con cv-facts.json.
+ * Lista vacia = el summary pasa. Exportada para testearla contra CVs reales.
+ */
+export function auditarSummary(summary, facts, lang = 'en') {
+  const base = new Set(tokens(`${facts.summary_base.en} ${facts.summary_base.es}`));
+  const corpus = new Set(tokens(JSON.stringify(facts)).flatMap(w => [w, raiz(w)]));
+  const problemas = new Set();
+  for (const w of tokens(summary)) {
+    if (INFLADAS.has(w)) { if (!base.has(w)) problemas.add(w); continue; }
+    // Un compuesto ("ai-enabled", "back-ends") se juzga por sus partes, que
+    // tokens() ya agrega sueltas.
+    if (/[-.]/.test(w) && !corpus.has(w)) continue;
+    if (/^\d/.test(w)) { if (!corpus.has(w)) problemas.add(w); continue; }
+    if (PROSA.has(w) || corpus.has(w) || corpus.has(raiz(w))) continue;
+    problemas.add(w);
+  }
+  return [...problemas];
 }
 
 // ── Validación determinística post-LLM ───────────────────────────────────────
@@ -141,9 +213,9 @@ export function validate(selection, facts, lang) {
   // skill_ids_ordered — el modelo a veces devuelve la lista entera; el layout
   // de una página banca 10 skills y 3 proyectos, así que el sistema recorta
   // aunque el modelo desborde (el modelo puede fallar; el sistema contiene).
-  if ((selection.skill_ids_ordered || []).length > 10) {
-    errors.push(`too many skills (${selection.skill_ids_ordered.length}), trimmed to 10`);
-    selection.skill_ids_ordered = selection.skill_ids_ordered.slice(0, 10);
+  if ((selection.skill_ids_ordered || []).length > MAX_SKILLS) {
+    errors.push(`too many skills (${selection.skill_ids_ordered.length}), trimmed to ${MAX_SKILLS}`);
+    selection.skill_ids_ordered = selection.skill_ids_ordered.slice(0, MAX_SKILLS);
   }
   if ((selection.project_ids_ordered || []).length > 3) {
     errors.push(`too many projects (${selection.project_ids_ordered.length}), trimmed to 3`);
@@ -189,6 +261,21 @@ export function validate(selection, facts, lang) {
     }
   } else {
     selection.summary = facts.summary_base[lang] || facts.summary_base.en;
+  }
+
+  // Auditoria de datos inventados. La lista negra de arriba solo atrapa
+  // tecnologias que alguien anoto de antemano, y el summary es el unico texto
+  // libre del CV: todo lo demas son ids validados. Revisando los 39 CVs de
+  // cv-out aparecieron "expert in TypeScript", "robust testing, CI pipelines" y
+  // "monitoring and error handling", nada de eso en cv-facts.json, y uno de esos
+  // CVs se envio. Aca se invierte la logica: cada palabra tiene que estar en los
+  // hechos o ser prosa generica; si no, vuelve summary_base.
+  if (selection.summary) {
+    const inventado = auditarSummary(selection.summary, facts, lang);
+    if (inventado.length > 0) {
+      errors.push(`summary no respaldado por cv-facts: ${inventado.join(', ')} — replaced with summary_base`);
+      selection.summary = facts.summary_base[lang] || facts.summary_base.en;
+    }
   }
 
   // Fix 1: summary floor — mínimo 25 palabras
@@ -342,7 +429,11 @@ ${projectsHtml}
 async function htmlToPDF(html, outPath) {
   const { chromium } = await import('playwright');
   mkdirSync(dirname(outPath), { recursive: true });
-  const browser = await chromium.launch();
+  // headless salvo HEADED=1 / --headed / --visible, mismo criterio que browser-utils.mjs
+  const headed = process.env.HEADED === '1'
+    || process.argv.includes('--headed')
+    || process.argv.includes('--visible');
+  const browser = await chromium.launch({ headless: !headed });
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'domcontentloaded' });
@@ -355,6 +446,18 @@ async function htmlToPDF(html, outPath) {
   } finally {
     await browser.close();
   }
+}
+
+// Lo que lee un ATS es el texto extraido del PDF, no lo que se ve. Si el PDF
+// sale en dos paginas o sin nombre y mail legibles, se tira el error y el
+// applier cae al CV estatico en vez de subir un archivo roto sin enterarse.
+async function verificarPDF(outPath, facts) {
+  const pdfParse = require('pdf-parse');
+  const { numpages, text } = await pdfParse(readFileSync(outPath));
+  const plano = text.replace(/\s+/g, ' ');
+  const faltan = [facts.identity.name, facts.identity.email].filter(x => !plano.includes(x));
+  if (numpages !== 1) throw new Error(`PDF con ${numpages} paginas, se esperaba 1`);
+  if (faltan.length) throw new Error(`PDF sin texto legible para ATS: falta ${faltan.join(', ')}`);
 }
 
 // ── Slug para nombre de archivo ───────────────────────────────────────────────
@@ -372,6 +475,47 @@ function slugify(str) {
  * @param {object} job — registro de applications (id, title, company, notes, ...)
  * @returns {{ path: string, role: string, lang: string } | null}
  */
+/**
+ * Piso garantizado de una seleccion, despues de validate().
+ *
+ * Vive aca y se exporta porque la corren DOS caminos: el de produccion, en
+ * _tailorCV, y el del eval, en evals/provider.mjs. Estaba escrito solo en el
+ * primero, asi que el eval medía un sistema sin piso y reportaba "0 skills"
+ * donde produccion pone seis. Un test que ejercita un camino que no existe no
+ * mide nada; peor, hace ruido donde no hay problema.
+ *
+ * El caso que lo destapó: un aviso con una inyeccion de prompt. El modelo
+ * contesta con un objeto que no es una seleccion, validate() lo deja vacio, y
+ * es justo aca donde el sistema se planta y arma un CV base correcto.
+ */
+// Tope de skills que entra en el layout de una pagina. Lo usan validate() y
+// aplicarMinimos: escrito una sola vez para que no puedan discrepar.
+export const MAX_SKILLS = 10;
+
+export function aplicarMinimos(selection, role) {
+  selection.skill_ids_ordered = enforceSkillCore(selection.headline_role, selection.skill_ids_ordered);
+  // enforceSkillCore corre DESPUES de validate(), que ya habia recortado a 10
+  // porque "el layout de una pagina banca 10 skills". Al sumar el nucleo por
+  // encima, el CV real salia con 12 y desbordaba ese limite: el techo se
+  // aplicaba antes del ultimo paso que agrega. Se recorta de nuevo al final.
+  if (selection.skill_ids_ordered.length > MAX_SKILLS) {
+    selection.skill_ids_ordered = selection.skill_ids_ordered.slice(0, MAX_SKILLS);
+  }
+  if (!selection.experience_bullet_ids?.cd?.length) {
+    selection.experience_bullet_ids = { cd: ['cd1', 'cd3', 'cd5'] };
+  }
+  if (!selection.project_ids_ordered?.length) {
+    selection.project_ids_ordered = ['huntdesk', 'docunify', 'forgix'];
+  }
+  if (!selection.skill_ids_ordered?.length) {
+    selection.skill_ids_ordered = ['sk_ts', 'sk_react', 'sk_next', 'sk_node', 'sk_gql', 'sk_claude'];
+  }
+  if (!selection.headline_role || !['ai', 'fullstack', 'frontend'].includes(selection.headline_role)) {
+    selection.headline_role = role;
+  }
+  return selection;
+}
+
 export async function tailorCV(job) {
   return spanTask('tailor_cv', {
     'job.company': job?.company,
@@ -395,22 +539,7 @@ async function _tailorCV(job) {
       // 2. Validación determinística
       validate(selection, facts, lang);
 
-      // Fix 2: imponer núcleo fijo de skills
-      selection.skill_ids_ordered = enforceSkillCore(selection.headline_role, selection.skill_ids_ordered);
-
-      // Asegurar que hay al menos algo
-      if (!selection.experience_bullet_ids?.cd?.length) {
-        selection.experience_bullet_ids = { cd: ['cd1', 'cd3', 'cd5'] };
-      }
-      if (!selection.project_ids_ordered?.length) {
-        selection.project_ids_ordered = ['huntdesk', 'docunify', 'forgix'];
-      }
-      if (!selection.skill_ids_ordered?.length) {
-        selection.skill_ids_ordered = ['sk_ts', 'sk_react', 'sk_next', 'sk_node', 'sk_gql', 'sk_claude'];
-      }
-      if (!selection.headline_role || !['ai','fullstack','frontend'].includes(selection.headline_role)) {
-        selection.headline_role = role;
-      }
+      aplicarMinimos(selection, role);
 
       // 3. Render HTML
       const html = renderHTML(selection, facts, lang);
@@ -419,6 +548,7 @@ async function _tailorCV(job) {
       mkdirSync(CV_OUT_DIR, { recursive: true });
       const outPath = join(CV_OUT_DIR, `${job.id}-${slugify(job.company)}.pdf`);
       await htmlToPDF(html, outPath);
+      await verificarPDF(outPath, facts);
 
       console.log(`[cv-tailor] PDF generado: ${outPath}`);
       return { path: outPath, role, lang };

@@ -20,6 +20,7 @@ const Database = require('better-sqlite3');
 
 const DRY = process.argv.includes('--dry');
 const db = new Database('applications.db');
+db.pragma('busy_timeout = 15000');   // ver el comentario en openDB de db-utils
 
 const cols = db.prepare('PRAGMA table_info(applications)').all().map(c => c.name);
 const add = (name, type) => {

@@ -52,9 +52,14 @@ const queries = {
     LIMIT 220
   `).all(),
 
+  // El detalle que muestra el panel es el veredicto del applier ("CONFIRMED at
+  // ...", "BLOCKED: ..."), que hasta el 2/9 vivia dentro de notes. Al separarlo
+  // en su propia columna estas dos vistas habrian quedado en blanco, asi que se
+  // toma el veredicto y se cae a notes para las filas viejas que nunca lo
+  // tuvieron.
   // Sent and still silent. Sorted by how long they have been silent.
   esperando: () => db.prepare(`
-    SELECT id, company, title, url, sent_at, notes, outcome,
+    SELECT id, company, title, url, sent_at, COALESCE(NULLIF(veredicto,''), notes) AS notes, outcome,
            ${DAYS.replace('%s', 'sent_at')} AS dias_sin_respuesta
     FROM applications
     WHERE status = 'applied' AND replied_at IS NULL AND outcome = ''
@@ -64,7 +69,7 @@ const queries = {
 
   // Anything with a human on the other side.
   activas: () => db.prepare(`
-    SELECT id, company, title, url, sent_at, replied_at, outcome, notes
+    SELECT id, company, title, url, sent_at, replied_at, outcome, COALESCE(NULLIF(veredicto,''), notes) AS notes
     FROM applications
     WHERE replied_at IS NOT NULL OR outcome <> ''
     ORDER BY COALESCE(replied_at, sent_at) DESC

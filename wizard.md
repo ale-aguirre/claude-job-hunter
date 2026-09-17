@@ -219,7 +219,7 @@ Comandos disponibles:
   /job-hunter hunt      → buscar nuevos trabajos
   /job-hunter status    → ver el pipeline
   /job-hunter apply     → aplicar a los mejores matches
-  /job-hunter dashboard → abrir panel visual en localhost:4242
+  /job-hunter dashboard → abrir panel visual en localhost:3000
   /job-hunter letter <url> → generar cover letter para un trabajo
 
 Para cambiar cualquier dato: editá profile.json directamente.

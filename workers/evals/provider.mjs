@@ -13,7 +13,7 @@ import dotenv from 'dotenv';
 // promptfoo runs with evals/ as cwd, so the workers/.env has to be named.
 dotenv.config({ path: join(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
-const { callTailorLLM, validate, getFacts } = await import('../cv-tailor.mjs');
+const { callTailorLLM, validate, getFacts, aplicarMinimos } = await import('../cv-tailor.mjs');
 
 export default class CvTailorProvider {
   id() {
@@ -48,6 +48,10 @@ export default class CvTailorProvider {
       // point of the eval is to see what the model produced before repair.
       const before = JSON.parse(JSON.stringify(raw));
       const errors = validate(raw, facts, lang);
+      // Mismo piso que aplica produccion en _tailorCV. Sin esto, `after` no es
+      // lo que el sistema entrega: es un estado intermedio que no llega nunca a
+      // renderizarse, y los graders de forma miden algo que no existe.
+      aplicarMinimos(raw, role);
 
       return {
         output: {

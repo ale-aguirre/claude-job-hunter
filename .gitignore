@@ -3,6 +3,8 @@ profile-master.md
 profile.json
 jobs.db
 applications.db
+*.db-shm
+*.db-wal
 dashboard/profiles/
 .qlaude/
 workers/.qlaude/
@@ -38,6 +40,7 @@ dashboard/.next/
 output/
 screenshots/
 dashboard/node_modules
+dashboard/package-lock.json
 workers/package-lock.json
 *.mp3
 *.mov
@@ -48,4 +51,18 @@ workers/cv-out/
 
 # eval run artifacts
 workers/evals/results*.json
+workers/evals/last-run.json
+workers/evals/r*.json
 .promptfoo/
+
+# Tooling artifacts
+.atl/
+
+# Log de la tarea programada del applier
+workers/applier.log
+
+# Estado de los watchers (se regenera solo)
+workers/.hn-watch-state.json
+workers/.hn-last-thread.txt
+workers/.hackathon-watch-state.json
+workers/check-alive.log

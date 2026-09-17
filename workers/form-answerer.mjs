@@ -25,9 +25,15 @@ import { callFast } from './anthropic-client.mjs';
 import { spanTask } from './telemetry.mjs';
 import { getFacts } from './cv-tailor.mjs';
 import { clickSubmit, verifySubmission } from './form-utils.mjs';
+import { esperarCodigoDeSeguridad } from './inbox-code.mjs';
 
 // ── Constants / policy ───────────────────────────────────────────────────────
 export const SALARY_ANSWER = 'USD 4000 gross monthly, flexible';
+// Dos semanas, no un mes. El 7/9 puse "1 month" suponiendo el preaviso sin
+// chequearlo, y ALEXIS.md lo dice explicito: "para un cambio de trabajo necesita
+// 2 semanas de preaviso". Un mes le restaba puntos en formularios que ordenan por
+// disponibilidad, y era un dato falso en algo que firma el.
+export const START_DATE_ANSWER = process.env.START_DATE_ANSWER || '2 weeks (notice period)';
 
 // Voluntary self-identification (EEO) — never answered by this system, ever,
 // required or not. If the ATS offers a "decline to answer" option it is used;
@@ -36,13 +42,21 @@ const EEO_LABEL_RE = /\b(gender|ethnicity|race|hispanic|latino|latinx|veteran|di
 const DECLINE_OPTION_RE = /decline|prefer not|don'?t wish|not to (answer|disclose|self-identify)|not disclose/i;
 
 // Legal/visa/salary — the categories the repo owner explicitly forbids guessing on.
-const SALARY_RE = /salary expectation|compensation expectation|desired salary|expected salary|salary range you.?re seeking|desired (hourly )?rate|hourly rate|pay rate|rate you.?re seeking/i;
+// "requirement" y "requirements" faltaban, y son la forma que usan varios boards:
+// el 3/9 "What is your monthly salary requirement?" de Jeeves quedo sin responder
+// y bloqueo la postulacion, teniendo la respuesta definida desde siempre en
+// SALARY_ANSWER. Van tambien las variantes con "compensation" y "pretension".
+const SALARY_RE = /salary expectation|salary requirement|compensation expectation|compensation requirement|desired salary|expected salary|salary range you.?re seeking|desired (hourly )?rate|hourly rate|pay rate|rate you.?re seeking|pretensi[oó]n salarial|expectativa salarial/i;
 const AUTH_RE   = /authoriz(e|ed|ation) to work in|legally (authorized|eligible) to work/i;
 const SPONSOR_RE = /sponsorship/i;
 const WORKED_HERE_RE = /(previously worked at|worked (for|at)|consulted for|been employed by)\b/i;
 const PREFERRED_NAME_RE = /preferred name|name.*prefer.*use|chosen name/i;
 
-const CATCHALL_OPTION_RE = /located elsewhere|rest of the world|other\b|anywhere else|not listed/i;
+// Opcion "para el resto del mundo" cuando la lista solo nombra sedes. Faltaban
+// las mas comunes: el 3/9 el desplegable de CoinMarketCap ofrecia Global, Hong
+// Kong, Singapore, Kuala Lumpur y Taipei, y "Global" no matcheaba nada, asi que
+// el campo quedo sin responder y la postulacion se bloqueo.
+const CATCHALL_OPTION_RE = /located elsewhere|rest of the world|other\b|anywhere else|not listed|\bglobal\b|worldwide|\bremote\b|anywhere/i;
 
 let _profileSummary = null;
 function profileSummary() {
@@ -275,14 +289,17 @@ export function classifyField(field, job) {
   if (/portfolio|personal website/i.test(low)) return PROFILE.portfolio ? { kind: 'text', value: PROFILE.portfolio } : { kind: 'skip', reason: 'no portfolio in profile' };
   if (/^city$/i.test(low.trim())) return PROFILE.city ? { kind: 'text', value: PROFILE.city } : { kind: 'skip', reason: 'no city in profile' };
 
+  // Fecha de inicio / preaviso. Alexis esta en relacion de dependencia, asi que
+  // "immediately" seria falso: hay preaviso real que cumplir. Un mes es el plazo
+  // estandar y no compromete a nada imposible; si en una busqueda puntual puede
+  // antes, se negocia en la entrevista, que es donde corresponde.
+  // Cambiar con START_DATE_ANSWER en .env sin tocar este archivo.
+  if (/earliest ((start|possible start) )?date|(when|how soon) (can|could) you start|date you could start|notice period|available to start|start date|fecha de (inicio|ingreso)/i.test(low)) {
+    return { kind: 'text', value: START_DATE_ANSWER, optionFallback: START_DATE_ANSWER };
+  }
+
   // "How did you hear about us" — deterministic per repo rules.
   if (/how did you (hear|find out|come across)/i.test(low)) return { kind: 'option', value: 'LinkedIn', fallback: 'Job board' };
-
-  // Country / location questions. Ashby's system location field is literally
-  // just labelled "Location" — confirmed live on Braintrust/g2i, both required.
-  if (/country of residence|located in|country\b.*located|which country|currently based|^location$/i.test(low.trim())) {
-    return { kind: 'option', value: 'Argentina', fallback: CATCHALL_OPTION_RE };
-  }
 
   // "Have you worked at / consulted for <company>" — truthful deterministic No,
   // company is never in cv-facts.experience.
@@ -302,11 +319,78 @@ export function classifyField(field, job) {
     return { kind: 'option', value: 'No' };
   }
 
-  // Work authorization — only answerable when explicitly about Argentina.
+  // Work authorization. Misma logica que sponsorship, que estaba doce lineas mas
+  // arriba resuelta de otra forma: si la pregunta nombra OTRO pais, decide un
+  // humano; si habla del pais de residencia del candidato sin nombrar ninguno,
+  // resuelve a Argentina, que es donde vive y donde obviamente puede trabajar.
+  //
+  // Estaban desalineadas y eso costaba postulaciones: el 31/8, TRM Labs pregunto
+  // "Are you legally authorized to work in your current country of residence?",
+  // que no nombra ningun pais, y la corrida se aborto pidiendo intervencion
+  // humana para una pregunta cuya respuesta es la residencia declarada en el
+  // propio perfil. No es una politica nueva: es la que el repo ya tenia escrita
+  // para sponsorship, aplicada tambien aca.
   if (AUTH_RE.test(low)) {
     if (/argentina/i.test(low)) return { kind: 'option', value: 'Yes' };
+    const nombraOtroPais = /(united states|u\.?s\.?a?\.?|uk|united kingdom|canada|australia|germany|netherlands|ireland|europe|eu)/i.test(low);
+    if (nombraOtroPais) return { kind: 'abort', reason: `requiere respuesta humana: ${label}` };
+    if (/current (country|location)|country of residence|your country|where you (live|reside)/i.test(low)) {
+      return { kind: 'option', value: 'Yes' };
+    }
     return { kind: 'abort', reason: `requiere respuesta humana: ${label}` };
   }
+
+  // El bloque de ubicacion va ACA, al final de las reglas especificas, y no
+  // arriba como estaba. Su patron incluye "located in" y "your location", que
+  // aparecen dentro de preguntas que tienen su propia regla: el 7/9 se comio la
+  // de sponsorship ("...to remain in your current location?") y le contesto
+  // "Argentina" en vez de "No". Lo general va despues de lo especifico.
+  // Country / location questions. Ashby's system location field is literally
+  // just labelled "Location" — confirmed live on Braintrust/g2i, both required.
+  //
+  // Dos cosas mas, aprendidas el 31/8 mirando el formulario real de CopilotKit
+  // en Lever, donde este campo abortaba la postulacion con "unanswerable":
+  //
+  // 1. La etiqueta no siempre es "Location" a secas. Ahi era "Current location",
+  //    y ^location$ no matchea eso. Peor: el label que llega trae pegado el
+  //    mensaje del propio autocompletar ("Current location No location found.
+  //    Try entering a..."), asi que hay que buscar la frase DENTRO del label en
+  //    vez de exigir que el label sea la frase.
+  //
+  // 2. Un input de texto con autocompletar de CIUDADES no entiende "Argentina".
+  //    Si el control es texto libre hay que escribir la ciudad; si es un select
+  //    o un combobox de paises, la opcion correcta es el pais. El codigo mandaba
+  //    "Argentina" en los dos casos, y en Lever eso devolvia literalmente
+  //    "No location found", que era el texto visible en la pantalla.
+  // El ultimo patron cubre la etiqueta pelada "Country*", que el barrido de
+  // formularios del 3/9 encontro sin responder: los patrones de arriba pedian
+  // "which country" o "country of residence" y ninguno matchea la palabra sola.
+  // Va anclado a propósito, para no comerse "Country of citizenship at birth",
+  // que es otro dato y no se contesta desde la ubicacion.
+  if (/country of residence|located in|country\b.*located|which country|currently based|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
+    // Este bloque es un embudo peligroso: el patron de arriba incluye "located
+    // in" y "your location", que aparecen adentro de preguntas que NO piden una
+    // ubicacion. El 7/9 respondio "Argentina" a "Are you located in the
+    // following countries: Cuba, Iran, North Korea, Syria, Russia...", que es
+    // una pregunta de si o no sobre paises sancionados. Alexis vive en
+    // Argentina, que no figura en ninguna de esas listas.
+    const PAISES_SANCIONADOS = /cuba|iran|north korea|corea del norte|syria|siria|russia|rusia|crimea|donetsk|luhansk|belarus|bielorrusia|venezuela|myanmar|sudan/i;
+    if (PAISES_SANCIONADOS.test(low)) return { kind: 'option', value: 'No' };
+
+    // Un campo que dice "city" pide una CIUDAD, tambien cuando es desplegable:
+    // buscar "Argentina" en una lista de ciudades no matchea nada. Lo mismo con
+    // el autocompletar de Lever y Ashby, que solo entiende ciudades.
+    const soloCiudad = (PROFILE.city || '').split(',')[0].trim();
+    if (/city|ciudad/i.test(low) && soloCiudad) {
+      return { kind: 'option', value: soloCiudad, fallback: CATCHALL_OPTION_RE, typeHint: soloCiudad };
+    }
+    if ((field.type === 'text' || field.type === 'textarea') && soloCiudad) {
+      return { kind: 'text', value: soloCiudad };
+    }
+
+    return { kind: 'option', value: 'Argentina', fallback: CATCHALL_OPTION_RE, typeHint: soloCiudad || 'Argentina' };
+  }
+
 
   // Multi-select checkbox group ("select up to N languages/skills/etc") —
   // needs a different LLM shape (pick several, not one).
@@ -337,7 +421,11 @@ export async function llmChooseOption(question, options, job) {
         // gpt-oss on Groq "thinks" before answering and the thinking is billed
         // against max_tokens (see anthropic-client.mjs) — 20 was too tight and
         // truncated the reply to nothing on the first live run. 80 leaves room.
-        const raw = await callFast(system, user, 80);
+        // gpt-oss razona antes de contestar y ese razonamiento se descuenta del
+        // mismo presupuesto: con margen chico la respuesta vuelve vacia y el campo
+        // queda sin responder, que bloquea la postulacion entera. Mismo bug que
+        // tenia cv-tailor con 800, aca con 80, 150 y 220.
+        const raw = await callFast(system, user, 700);
         const n = parseInt((raw.match(/\d+/) || [])[0], 10);
         if (Number.isInteger(n) && n >= 1 && n <= options.length) return { index: n - 1, text: options[n - 1] };
         if (n === 0) return { index: -1, text: null };
@@ -360,7 +448,7 @@ export async function llmChooseMultipleOptions(question, options, job, maxPick =
         // options (e.g. 24 languages), so gpt-oss's pre-answer "thinking"
         // tokens (billed against max_tokens, see anthropic-client.mjs) need
         // more room — 80 truncated to nothing on g2i's language checklist.
-        const raw = await callFast(system, user, 150);
+        const raw = await callFast(system, user, 800);
         if (/^\s*0\s*$/.test(raw.trim())) return [];
         const nums = [...raw.matchAll(/\d+/g)].map(m => parseInt(m[0], 10)).filter(n => n >= 1 && n <= options.length);
         const uniq = [...new Set(nums)].slice(0, maxPick);
@@ -384,7 +472,7 @@ export async function llmShortAnswer(question, job) {
     const user = `Job: ${job?.title || ''} at ${job?.company || ''}\n\nQuestion: ${question}\n\nCandidate facts (only use these):\n${facts.summary_base.en}\n- ${bulletPool}`;
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        const raw = (await callFast(system, user, 220)).trim();
+        const raw = (await callFast(system, user, 900)).trim();
         if (!raw || /^NO_ANSWER$/i.test(raw)) return null;
         return raw.slice(0, 400);
       } catch (e) {
@@ -576,6 +664,20 @@ export async function uploadCVRobust(page, cvPath) {
     // wait. Poll instead of a single fixed sleep.
     const filename = cvPath.split(/[\\/]/).pop();
     const checkVerified = () => page.evaluate((filename) => {
+      // Primero la fuente autoritativa: el FileList del propio input. Si el
+      // navegador dice que el archivo esta adjunto, esta adjunto, muestre la
+      // pagina lo que muestre.
+      //
+      // Antes esto se resolvia SOLO mirando document.body.innerText, o sea
+      // pidiendole a la pagina que mostrara el nombre del archivo en algun
+      // lado visible. Greenhouse y Ashby lo muestran; Lever no, y la subida
+      // quedaba marcada como fallida con el archivo ya cargado. Asi se perdio
+      // la postulacion a CoinMarketCap el 31/8, y Lever es una de las fuentes
+      // grandes de la cola, no un caso aislado.
+      const input = document.querySelector('[data-fa-cv="1"]');
+      const cargado = input?.files?.[0]?.name || '';
+      if (cargado && (cargado === filename || cargado.includes(filename.replace(/\.pdf$/i, '')))) return true;
+
       const text = document.body.innerText;
       return text.includes(filename) || text.includes(filename.replace(/\.pdf$/i, ''));
     }, filename);
@@ -763,6 +865,78 @@ export async function scanFieldErrors(page) {
   });
 }
 
+// ── 8b. Greenhouse email security-code challenge ─────────────────────────────
+/**
+ * Greenhouse a veces no rebota el submit con campos en rojo sino con un
+ * campo de "security code" que exige el código que te manda por email.
+ * Confirmado el 26/8 contra Webflow: el applier no leía ese correo y
+ * reintentaba a ciegas — seis códigos pedidos ese día, ninguno usado nunca.
+ * Detecta si la página está pidiendo ese código ahora mismo.
+ */
+async function detectarCampoCodigoSeguridad(page) {
+  return page.evaluate(() => {
+    const texto = document.body.innerText || '';
+    if (!/security code/i.test(texto)) return null;
+
+    const candidatos = Array.from(document.querySelectorAll(
+      'input[type="text"], input:not([type]), input[type="tel"], input[type="number"]'
+    ));
+    const match = candidatos.find(el => {
+      const lbId = el.getAttribute('aria-labelledby');
+      const props = [
+        el.id, el.name, el.placeholder, el.getAttribute('aria-label'),
+        el.closest('label')?.textContent,
+        lbId ? lbId.split(/\s+/).map(id => document.getElementById(id)?.textContent || '').join(' ') : '',
+      ].filter(Boolean).join(' ');
+      return /security.?code|verification.?code/i.test(props);
+    });
+    if (!match) return null;
+    if (match.id) return { by: 'id', value: match.id };
+    if (match.name) return { by: 'name', value: match.name };
+    return null;
+  });
+}
+
+/** Escapa un id para usarlo como selector CSS (Playwright no lo hace solo). */
+function escaparCssId(id) {
+  return id.replace(/([^a-zA-Z0-9_-])/g, '\\$1');
+}
+
+/**
+ * Espera el código por email, lo escribe en el campo y reenvía. Un solo
+ * intento: si el mail no llega o el reenvío tampoco confirma, se reporta
+ * bloqueado — reintentar a ciegas es exactamente el bug que generó seis
+ * códigos basura el 26/8.
+ */
+async function manejarCodigoDeSeguridad(page, job, antesDeEnviar) {
+  const campo = await detectarCampoCodigoSeguridad(page);
+  if (!campo) {
+    return { status: 'blocked', reason: 'la página pide un código de seguridad pero no se encontró el campo para escribirlo', fieldErrors: [] };
+  }
+
+  console.log(`[form-answerer] ${job.company} pide código de seguridad por email — esperando el mail de Greenhouse...`);
+  const resultado = await esperarCodigoDeSeguridad({ desde: antesDeEnviar, empresa: job.company, timeoutMs: 120000 });
+  if (!resultado.ok) {
+    return { status: 'blocked', reason: `código de seguridad: ${resultado.razon}`, fieldErrors: [] };
+  }
+
+  const selector = campo.by === 'id' ? `#${escaparCssId(campo.value)}` : `[name="${campo.value}"]`;
+  try {
+    await page.locator(selector).first().fill(resultado.codigo);
+  } catch (e) {
+    return { status: 'blocked', reason: `código de seguridad recibido pero no se pudo escribir en el campo: ${e.message.slice(0, 100)}`, fieldErrors: [] };
+  }
+
+  const clicked2 = await clickSubmit(page);
+  if (!clicked2) return { status: 'blocked', reason: 'código de seguridad escrito pero no se encontró el botón de submit para reenviar', fieldErrors: [] };
+
+  const proof = await verifySubmission(page, { company: job.company, originalUrl: job.url });
+  if (proof.confirmed) return { status: 'applied', proof, securityCode: true };
+
+  const fieldErrors = await scanFieldErrors(page);
+  return { status: 'blocked', reason: 'se reenvió con el código de seguridad pero el envío no se confirmó', proof, fieldErrors };
+}
+
 // ── 9. Submit with one retry on validation errors ────────────────────────────
 /**
  * clickSubmit() -> verifySubmission(). If the ATS bounced the submission with
@@ -771,11 +945,20 @@ export async function scanFieldErrors(page) {
  * Never called with a real submit unless the caller explicitly wants LIVE.
  */
 export async function submitWithRetry(page, job) {
+  // Se anota antes de tocar submit: si Greenhouse pide un código de
+  // seguridad, el mail tiene que haber llegado DESPUÉS de este momento —
+  // uno viejo de otra postulación no sirve y usarlo sería peor que fallar.
+  const antesDeEnviar = new Date();
+
   const clicked = await clickSubmit(page);
   if (!clicked) return { status: 'blocked', reason: 'no submit button found', fieldErrors: [] };
 
   let proof = await verifySubmission(page, { company: job.company, originalUrl: job.url });
   if (proof.confirmed) return { status: 'applied', proof };
+
+  if (await detectarCampoCodigoSeguridad(page)) {
+    return manejarCodigoDeSeguridad(page, job, antesDeEnviar);
+  }
 
   let fieldErrors = await scanFieldErrors(page);
   if (fieldErrors.length === 0) return { status: 'blocked', reason: 'submit did not confirm and no red fields found — unverified', proof, fieldErrors };

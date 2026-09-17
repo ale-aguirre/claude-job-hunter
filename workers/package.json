@@ -26,6 +26,7 @@
     "chrome-cookies-secure": "^3.0.1",
     "dotenv": "^17.3.1",
     "googleapis": "^171.4.0",
+    "imapflow": "^1.7.6",
     "linkedin-jobs-scraper": "^18.0.1",
     "nodemailer": "^8.0.1",
     "pdf-parse": "^1.1.1",

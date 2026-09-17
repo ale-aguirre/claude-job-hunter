@@ -23,23 +23,35 @@ Cargá las instrucciones de [wizard.md](wizard.md) y guiá al usuario por el onb
 5. Si hay jobs nuevos, preguntá: "¿Querés que aplique automáticamente a los más relevantes?"
 
 ### `apply` — Aplicar a jobs encontrados
-1. Leé el estado actual: `Bash: node workers/cleanup-db.mjs --stats`
-2. Analizá los jobs con status `found` — priorizá por match con el perfil del usuario.
-3. Lanzá Reigen: `Bash: node workers/apply-from-db.mjs --limit=5 --dry-run`
-4. Mostrá qué aplicaciones haría. Pedí confirmación antes de ejecutar sin `--dry-run`.
-5. Con confirmación: `Bash: node workers/apply-from-db.mjs --limit=5`
+1. Puntuá y rankeá lo que trajo el scout: `Bash: node workers/filter.mjs`
+2. Analizá los jobs con status `found` — el orden por `score` ya lo hace el applier.
+3. Lanzá Reigen en seco: `Bash: cd workers && node apply-ats.mjs --dry-run --limit=5`
+   El applier ya ordena por `score` y descarta por rol y por país antes de tocar
+   un formulario; el dry-run imprime a qué avisos postularía y con qué puntaje.
+4. Mostrá esa lista. Pedí confirmación antes de ejecutar sin `--dry-run`.
+5. Con confirmación: `Bash: cd workers && node apply-ats.mjs --limit=5`
+
+Ojo: el tope por corrida es 8 a propósito, y entre envío y envío hay una pausa
+aleatoria de 45 a 150 segundos. Una corrida de 5 tarda varios minutos: eso no es
+que se colgó.
 
 ### `status` — Ver el pipeline
-1. `Bash: node workers/cleanup-db.mjs --stats`
+1. `Bash: node workers/eval-report.mjs` — tasa de entrega por canal y estado del pipeline.
 2. Mostrá un resumen claro:
    - Cuántos jobs encontrados / aplicados / en entrevista
    - Últimas aplicaciones enviadas
    - Próximo paso recomendado
-3. Si el dashboard está corriendo (`Bash: curl -s http://localhost:4242/api/applications | head -5`), mencioná la URL.
+3. Si el dashboard está corriendo (`Bash: curl -s http://localhost:3000/api/applications | head -5`), mencioná la URL.
+
+Al contar postulaciones, no confíes sólo en `status='applied'`: una fila
+confirmada y una sin confirmar comparten ese estado, y se distinguen por el
+prefijo `CONFIRMED:` / `UNVERIFIED` en `notes`.
 
 ### `dashboard` — Levantar el panel visual
-`Bash: node dashboard/server.mjs &`
-Luego: `Bash: open http://localhost:4242`
+`Bash: node dashboard/server2.mjs &` → http://localhost:3000
+
+Decile la URL al usuario en vez de abrirla vos: `open` es de macOS y falla en
+Windows y en Linux. (`dashboard/server.mjs`, en el 4242, es la versión anterior.)
 
 ### `research <empresa>` — Investigar una empresa
 Usá WebSearch y WebFetch para investigar la empresa. Buscá:
@@ -116,11 +128,11 @@ Cada subagente trabaja con las instrucciones en `agents/<nombre>.md`.
 | Archivo | Descripción |
 |---------|-------------|
 | `profile.json` | Perfil del usuario — generado por el wizard |
-| `jobs.db` | Base de datos SQLite con todas las oportunidades |
+| `workers/applications.db` | Base SQLite con todas las oportunidades. Es la única viva: `jobs.db` y `dashboard/applications.db` quedaron vacías |
 | `workers/` | Scripts Node.js que Claude llama para tareas específicas |
 | `agents/` | Prompts de los subagentes especializados |
 | `boards/` | Configuración de job boards por profesión |
-| `dashboard/` | Panel web opcional en localhost:4242 |
+| `dashboard/` | Panel web opcional en localhost:3000 (`server2.mjs`) |
 
 ---
 

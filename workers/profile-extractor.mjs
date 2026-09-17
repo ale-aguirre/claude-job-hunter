@@ -19,6 +19,7 @@ import 'dotenv/config';
 const CACHE_PATH = fileURLToPath(new URL('.profile-keywords.json', import.meta.url));
 const CACHE_TTL  = 24 * 60 * 60 * 1000; // 24 hours
 const GROQ_KEY   = process.env.GROQ_API_KEY       || '';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 const OR_KEY     = process.env.OPENROUTER_API_KEY  || '';
 
 /**
@@ -63,9 +64,14 @@ export async function getProfileKeywords() {
 
   // 4. LLM analysis — Groq first, OpenRouter free as fallback
   const llmProviders = [
-    GROQ_KEY && { url: 'https://api.groq.com/openai/v1/chat/completions', key: GROQ_KEY, model: 'llama-3.3-70b-versatile' },
-    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'google/gemma-3-4b-it:free' },
-    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'meta-llama/llama-3.2-3b-instruct:free' },
+    GROQ_KEY && { url: 'https://api.groq.com/openai/v1/chat/completions', key: GROQ_KEY, model: GROQ_MODEL },
+    // Los dos ids :free anteriores (google/gemma-3-4b-it:free y
+    // meta-llama/llama-3.2-3b-instruct:free) ya no existen en OpenRouter, asi
+    // que la cascada de fallback tenia sus dos escalones rotos: cuando Groq
+    // fallaba no habia respaldo, solo dos 404 y el fallback de config.
+    // Reemplazos verificados contra /api/v1/models.
+    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'google/gemma-4-31b-it:free' },
+    OR_KEY   && { url: 'https://openrouter.ai/api/v1/chat/completions',   key: OR_KEY,   model: 'nvidia/nemotron-3.5-lightning:free' },
   ].filter(Boolean);
 
   for (const provider of llmProviders) {
@@ -75,8 +81,13 @@ export async function getProfileKeywords() {
       headers: { Authorization: `Bearer ${provider.key}`, 'Content-Type': 'application/json', ...(provider.url.includes('openrouter') ? { 'HTTP-Referer': 'https://huntdesk.local', 'X-Title': 'HuntDesk' } : {}) },
       body: JSON.stringify({
         model: provider.model,
-        max_tokens: 900,
+        max_tokens: 1500,
         temperature: 0.1,
+        // gpt-oss razona antes de contestar y ese razonamiento se descuenta de
+        // max_tokens: sin esto la respuesta vuelve vacía y el extractor cae al
+        // fallback de config, que sólo tiene keywords de frontend. Con el CV de
+        // AI del perfil eso descartaba 287 de 289 avisos en apply-ats.
+        ...(provider.url.includes('groq') ? { reasoning_effort: 'low' } : {}),
         messages: [
           {
             role: 'system',

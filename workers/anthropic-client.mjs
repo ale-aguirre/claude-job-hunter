@@ -20,7 +20,12 @@ const SONNET_MODEL   = 'claude-sonnet-4-6';
 // qwen3.6-27b it does not emit a <think> block that has to be stripped.
 // Override with GROQ_MODEL in .env without touching this file.
 const GROQ_MODEL     = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
-const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'deepseek-r1:8b';
+// deepseek-r1:8b no estaba descargado en esta maquina: el tercer escalon de la
+// cascada pedia un modelo inexistente, igual que los otros dos. De los tres que
+// si estan (dolphin-llama3, qwen2.5:7b-instruct, deepseek-coder:6.7b-instruct)
+// qwen2.5 es el que mejor devuelve JSON limpio, que es lo unico que se le pide
+// aca. Verificado contra el Ollama local.
+const OLLAMA_MODEL   = process.env.OLLAMA_MODEL || 'qwen2.5:7b-instruct';
 const OLLAMA_BASE    = process.env.OLLAMA_BASE  || 'http://localhost:11434';
 
 // ── Anthropic Sonnet (orchestration primary) ─────────────────────────────────
@@ -54,7 +59,17 @@ async function callAnthropicRaw(system, user, maxTokens = 2000) {
 // ── Groq llama-3.3-70b (simple tasks primary / smart fallback) ───────────────
 async function callGroqRaw(system, user, maxTokens = 1500) {
   return spanLLM({ provider: 'groq', model: GROQ_MODEL }, async () => {
-  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  // Un 429 de Groq es temporal: el free tier limita por minuto y se libera solo.
+  // Sin esperar, una corrida del applier lo tomaba como "el modelo no contesto"
+  // y dejaba cada pregunta abierta sin responder, o sea la postulacion entera
+  // bloqueada por algo que se resolvia esperando medio minuto. El 31/8 una tanda
+  // de seis se perdio asi.
+  //
+  // Igual conviene esperar antes de bajar un escalon: Anthropic no esta
+  // configurada en esta instalacion, asi que el unico respaldo real es el Ollama
+  // local, que corre en CPU y tarda bastante mas que Groq. Reintentar sale mas
+  // barato que caer al modelo chico.
+  const pedir = () => fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${GROQ_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -72,6 +87,15 @@ async function callGroqRaw(system, user, maxTokens = 1500) {
     }),
     signal: AbortSignal.timeout(60000),
   });
+
+  let r = await pedir();
+  for (let intento = 1; r.status === 429 && intento <= 3; intento++) {
+    const sugerido = parseFloat(r.headers.get('retry-after') || '0');
+    const espera = Math.min(Math.max(sugerido * 1000 || intento * 15000, 5000), 60000);
+    console.warn(`[llm] Groq 429 — esperando ${Math.round(espera / 1000)}s (intento ${intento}/3)`);
+    await new Promise(res => setTimeout(res, espera));
+    r = await pedir();
+  }
   if (!r.ok) throw new Error(`Groq ${r.status}: ${(await r.text()).slice(0, 100)}`);
   const d = await r.json();
   const choice = d.choices?.[0];
