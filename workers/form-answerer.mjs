@@ -319,6 +319,12 @@ export function classifyField(field, job) {
   // antes, se negocia en la entrevista, que es donde corresponde.
   // Cambiar con START_DATE_ANSWER en .env sin tocar este archivo.
   if (/earliest ((start|possible start) )?date|(when|how soon) (can|could) you start|date you could start|notice period|available to start|start date|fecha de (inicio|ingreso)/i.test(low)) {
+    // Un input de fecha no entiende "2 weeks (notice period)": ahi va la fecha
+    // real a dos semanas, que dice lo mismo en el formato que el campo acepta.
+    if (field.type === 'date') {
+      const dosSemanas = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+      return { kind: 'text', value: dosSemanas.toISOString().slice(0, 10) };
+    }
     return { kind: 'text', value: START_DATE_ANSWER, optionFallback: START_DATE_ANSWER };
   }
 
@@ -390,6 +396,13 @@ export function classifyField(field, job) {
   // respuestas que se contradicen, firmadas por Alexis. La pregunta ademas es
   // ambigua (no dice de que pais), asi que no la contesta ni el codigo ni el
   // modelo: se corta y decide el.
+  // "Please select the country you hold citizenship in" pide un PAIS, no una
+  // declaracion de estatus migratorio: es argentino y ahi no hay ambiguedad.
+  if (/(country|pa[ií]s).{0,20}(citizenship|ciudadan[ií]a)|citizenship.{0,20}country/i.test(low)) {
+    const paisCiudadania = (PROFILE.city || '').split(',').slice(1).join(',').trim() || 'Argentina';
+    return { kind: 'option', value: paisCiudadania, fallback: CATCHALL_OPTION_RE, typeHint: paisCiudadania };
+  }
+
   if (/citizen|permanent resident|immigration status|work authoriz(ation|ed) status|estatus migratorio|ciudadan[ií]a/i.test(low)) {
     // Es ciudadano argentino y trabaja legalmente en Argentina, confirmado por
     // el mismo el 18/9. Cuando la pregunta es sobre su pais de residencia, la
@@ -422,7 +435,7 @@ export function classifyField(field, job) {
   // "which country" o "country of residence" y ninguno matchea la palabra sola.
   // Va anclado a propósito, para no comerse "Country of citizenship at birth",
   // que es otro dato y no se contesta desde la ubicacion.
-  if (/country of residence|located in|country\b.*located|which country|currently based|country\b.*\bbased\b|where are you (located|based)|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
+  if (/country of (residence|employment|work)|located in|country\b.*located|which country|currently based|country\b.*\bbased\b|where are you (located|based)|which location are you applying|work location|\b(current|your)?\s*location\b|^\s*(country|pa[ií]s)\s*\*?\s*$/i.test(low)) {
     // Este bloque es un embudo peligroso: el patron de arriba incluye "located
     // in" y "your location", que aparecen adentro de preguntas que NO piden una
     // ubicacion. El 7/9 respondio "Argentina" a "Are you located in the
