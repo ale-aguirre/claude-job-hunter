@@ -121,9 +121,16 @@ function isRelevantTitle(title = '', score = 0) {
   if (ROLE_EXCLUDE_RE.test(t)) return false;
   if (FUERA_DE_PERFIL_RE.test(t) || !FAMILIA_RE.test(t)) return false;
   if (EXCLUDE_KEYWORDS.some(k => t.includes(k.toLowerCase()))) return false;
-  if (score >= SCORE_CONFIABLE) return true;
-  const normalizado = normalizarTitulo(t);
-  return APPLY_KEYWORDS.some(k => normalizado.includes(normalizarTitulo(k)));
+  // Antes, por debajo de SCORE_CONFIABLE el titulo tenia que contener ademas una
+  // keyword del perfil. Con FAMILIA_RE arriba eso pide la misma prueba dos veces
+  // y con la peor de las dos: la lista de keywords la genera el LLM y no incluye
+  // "software engineer" a secas, asi que el 18/9 quedaron afuera "Software
+  // Engineer, AI" de convex, "Senior Software Engineer" de neon y "Software
+  // Engineer, Product" de braintrust, todas de empresas chicas, que es justo
+  // donde Alexis quiere postular. Eran 171 avisos, y la cola quedo en cero
+  // porque las unicas empresas que pasaban ya estaban en el tope de tres.
+  // El score sigue mandando en el ORDEN, que es para lo que sirve.
+  return true;
 }
 
 // ── Location filter ───────────────────────────────────────────────────────────
