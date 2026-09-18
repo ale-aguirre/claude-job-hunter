@@ -376,6 +376,17 @@ export function classifyField(field, job) {
     return { kind: 'option', value: 'Yes' };
   }
 
+  // Declaracion de ciudadania o estatus migratorio. El 18/9, en Oyster, el LLM
+  // eligio "I currently need employer sponsorship" en un radio que ofrecia
+  // "I am a citizen/permanent resident with full work authorization", y en el
+  // campo de arriba ya habia contestado que NO necesita sponsorship: dos
+  // respuestas que se contradicen, firmadas por Alexis. La pregunta ademas es
+  // ambigua (no dice de que pais), asi que no la contesta ni el codigo ni el
+  // modelo: se corta y decide el.
+  if (/citizen|permanent resident|immigration status|work authoriz(ation|ed) status|estatus migratorio|ciudadan[ií]a/i.test(low)) {
+    return { kind: 'abort', reason: 'declaracion de ciudadania o estatus migratorio: la decide Alexis' };
+  }
+
   // Country / location questions. Ashby's system location field is literally
   // just labelled "Location" — confirmed live on Braintrust/g2i, both required.
   //
@@ -543,9 +554,15 @@ async function readOpenListbox(page, sel) {
     const controls = el.getAttribute('aria-controls');
     let listbox = controls ? document.getElementById(controls) : null;
     if (!listbox && el.id) listbox = document.getElementById(`react-select-${el.id}-listbox`);
-    if (!listbox) listbox = [...document.querySelectorAll('[role="listbox"]')].find(l => !!l.offsetParent);
+    // offsetParent es null en cualquier elemento con position:fixed, y ahi es
+    // donde varios ATS montan el desplegable flotante. Ashby (Oyster, 18/9)
+    // mostraba "Argentina" en pantalla y esta funcion devolvia cero opciones,
+    // asi que el campo pais quedaba sin responder y bloqueaba la postulacion.
+    // El rectangulo sirve para los dos casos.
+    const visible = el2 => { const r = el2.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+    if (!listbox) listbox = [...document.querySelectorAll('[role="listbox"]')].find(visible);
     if (!listbox) return [];
-    const opts = [...listbox.querySelectorAll('[role="option"]')].filter(o => !!o.offsetParent);
+    const opts = [...listbox.querySelectorAll('[role="option"]')].filter(visible);
     opts.forEach((o, i) => o.setAttribute('data-fa-opt', `${sel.replace(/[^a-z0-9]/gi, '')}-${i}`));
     return opts.map((o, i) => ({ idx: i, text: o.textContent.replace(/^\d+\.\s*/, '').trim(), optSel: `[data-fa-opt="${sel.replace(/[^a-z0-9]/gi, '')}-${i}"]` }));
   }, sel);
