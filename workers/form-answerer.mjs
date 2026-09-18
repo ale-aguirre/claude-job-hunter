@@ -55,6 +55,10 @@ const AUTH_RE   = /authoris?(e|ed|ation|zed|zation) to work in|legally (authoriz
 const SPONSOR_RE = /sponsorship/i;
 const WORKED_HERE_RE = /(previously worked at|worked (for|at)|consulted for|been employed by)\b/i;
 const PREFERRED_NAME_RE = /preferred name|name.*prefer.*use|chosen name/i;
+// Paises que, nombrados en la pregunta, la sacan del pais de residencia de
+// Alexis. Estaba escrita dos veces adentro de classifyField (sponsorship y
+// work authorization) y ahora la usa tambien la de ciudadania.
+const OTRO_PAIS_RE = /\b(united states|u\.?s\.?a?\.?|uk|united kingdom|canada|australia|germany|netherlands|ireland|europe|eu)\b/i;
 
 // Opcion "para el resto del mundo" cuando la lista solo nombra sedes. Faltaban
 // las mas comunes: el 3/9 el desplegable de CoinMarketCap ofrecia Global, Hong
@@ -357,7 +361,10 @@ export function classifyField(field, job) {
   // para sponsorship, aplicada tambien aca.
   if (AUTH_RE.test(low)) {
     if (/argentina/i.test(low)) return { kind: 'option', value: 'Yes' };
-    const nombraOtroPais = /(united states|u\.?s\.?a?\.?|uk|united kingdom|canada|australia|germany|netherlands|ireland|europe|eu)/i.test(low);
+    // Usa la constante compartida: aca vivia una copia con un caracter de
+    // control en vez de un borde de palabra, asi que NUNCA matcheaba y el bot
+    // contestaba que si puede trabajar en Estados Unidos, que es falso.
+    const nombraOtroPais = OTRO_PAIS_RE.test(low);
     if (nombraOtroPais) return { kind: 'abort', reason: `requiere respuesta humana: ${label}` };
     if (/current (country|location)|country of residence|your country|where you (live|reside)/i.test(low)) {
       return { kind: 'option', value: 'Yes' };
@@ -384,7 +391,13 @@ export function classifyField(field, job) {
   // ambigua (no dice de que pais), asi que no la contesta ni el codigo ni el
   // modelo: se corta y decide el.
   if (/citizen|permanent resident|immigration status|work authoriz(ation|ed) status|estatus migratorio|ciudadan[ií]a/i.test(low)) {
-    return { kind: 'abort', reason: 'declaracion de ciudadania o estatus migratorio: la decide Alexis' };
+    // Es ciudadano argentino y trabaja legalmente en Argentina, confirmado por
+    // el mismo el 18/9. Cuando la pregunta es sobre su pais de residencia, la
+    // respuesta es esa y no hay nada que consultar.
+    if (OTRO_PAIS_RE.test(low)) {
+      return { kind: 'abort', reason: `pregunta de ciudadania sobre otro pais: "${label.slice(0, 80)}"` };
+    }
+    return { kind: 'option', value: 'citizen', fallback: /permanent resident|full work authoriz|citizen/i };
   }
 
   // Country / location questions. Ashby's system location field is literally
