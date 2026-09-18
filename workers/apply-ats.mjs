@@ -113,7 +113,7 @@ function normalizarTitulo(t) {
  * C o Rust, arquitectos, research y roles que no son de ingenieria.
  * "AI Deployment Engineer" queda adentro: en OpenAI es un rol de integracion.
  */
-const FUERA_DE_PERFIL_RE = /\b(infra(structure)?|devops|sre|site reliability|security|finops|release engineer|performance engineer|(?<!ai )deployment engineer|postgres|database|dba|data engineer|networking|storage|baremetal|bare metal|kernel|compiler|solutions? architect|architect|pre-?sales|sales|account (executive|manager)|customer success|support engineer|leader|recruit\w*|designer|researcher|scientist|analyst|embedded|firmware|hardware|qa engineer|test engineer)\b/i;
+const FUERA_DE_PERFIL_RE = /\b(infra(structure)?|devops|sre|site reliability|security|finops|release engineer|performance engineer|(?<!ai )deployment engineer|postgres|database|dba|data engineer|networking|storage|baremetal|bare metal|kernel|compiler|solutions? architect|architect|pre-?sales|sales|account (executive|manager)|customer success|support engineer|leader|recruit\w*|designer|researcher|scientist|analyst|embedded|firmware|hardware|qa engineer|test engineer|afirmativa|pessoas com defici[eê]ncia|pcd)\b/i;
 const FAMILIA_RE = /\b(full[\s-]?stack|front[\s-]?end|frontend|web|product engineer|software (engineer|developer)|developer|ai|llm|agent\w*|genai|generative|machine learning|ml|prompt|automation|javascript|typescript|react|node|next\.?js|sdk|forward deployed|applied|integration|tooling|evals?)\b/i;
 
 function isRelevantTitle(title = '', score = 0) {
