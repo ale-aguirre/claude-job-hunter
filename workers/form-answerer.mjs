@@ -47,7 +47,11 @@ const DECLINE_OPTION_RE = /decline|prefer not|don'?t wish|not to (answer|disclos
 // y bloqueo la postulacion, teniendo la respuesta definida desde siempre en
 // SALARY_ANSWER. Van tambien las variantes con "compensation" y "pretension".
 const SALARY_RE = /salary expectation|salary requirement|compensation expectation|compensation requirement|desired salary|expected salary|salary range you.?re seeking|desired (hourly )?rate|hourly rate|pay rate|rate you.?re seeking|pretensi[oó]n salarial|expectativa salarial/i;
-const AUTH_RE   = /authoriz(e|ed|ation) to work in|legally (authorized|eligible) to work/i;
+// Ashby en Oyster (18/9) pregunta "Are you legally authorised to work in your
+// country of residence?" con ortografia britanica: no matcheaba, caia en el
+// bloque de ubicacion por "country of residence" y respondia "Argentina" en un
+// campo de Si/No.
+const AUTH_RE   = /authoris?(e|ed|ation|zed|zation) to work in|legally (authoriz?ed|authorised|eligible) to work/i;
 const SPONSOR_RE = /sponsorship/i;
 const WORKED_HERE_RE = /(previously worked at|worked (for|at)|consulted for|been employed by)\b/i;
 const PREFERRED_NAME_RE = /preferred name|name.*prefer.*use|chosen name/i;
@@ -284,7 +288,9 @@ export function classifyField(field, job) {
   if (/first\s*name/i.test(low)) return { kind: 'text', value: PROFILE.firstName };
   if (/last\s*name/i.test(low)) return { kind: 'text', value: PROFILE.lastName };
   if (PREFERRED_NAME_RE.test(low)) return { kind: 'text', value: PROFILE.firstName };
-  if (/^name$/i.test(low.trim())) return { kind: 'text', value: `${PROFILE.firstName} ${PROFILE.lastName}` };
+  // "Full Name" quedaba sin regla y bloqueaba la postulacion en Oyster.
+  if (/^(full\s*name|nombre completo)\s*\*?$/i.test(low.trim()) || /^name\s*\*?$/i.test(low.trim()))
+    return { kind: 'text', value: `${PROFILE.firstName} ${PROFILE.lastName}` };
   if (/e-?mail/i.test(low)) return PROFILE.email ? { kind: 'text', value: PROFILE.email } : { kind: 'skip', reason: 'no email in profile' };
   if (/phone/i.test(low)) return PROFILE.phone ? { kind: 'text', value: PROFILE.phone } : { kind: 'skip', reason: 'no phone in profile — not configured in .env' };
   if (/linkedin/i.test(low)) return PROFILE.linkedin ? { kind: 'text', value: PROFILE.linkedin } : { kind: 'skip', reason: 'no linkedin in profile' };
@@ -322,7 +328,12 @@ export function classifyField(field, job) {
   }
 
   // Salary — the one number the repo owner defined.
-  if (SALARY_RE.test(low)) return { kind: 'text', value: SALARY_ANSWER, optionFallback: SALARY_ANSWER };
+  // Un input numerico no acepta "USD 4000 gross monthly, flexible": ahi va el
+  // numero pelado, que es el mismo dato.
+  if (SALARY_RE.test(low)) {
+    const soloNumero = (SALARY_ANSWER.match(/\d[\d.,]*/) || ['4000'])[0];
+    return { kind: 'text', value: field.type === 'number' ? soloNumero : SALARY_ANSWER, optionFallback: SALARY_ANSWER };
+  }
 
   // Sponsorship — "NO adivinar" unless it clearly resolves to Argentina (candidate's
   // own declared residence). Any other named country → abort, human decides.
